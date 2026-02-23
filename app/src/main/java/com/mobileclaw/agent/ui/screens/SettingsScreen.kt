@@ -71,7 +71,7 @@ fun SettingsScreen(
                         localApiKey = it
                         onApiKeyChange(it)
                     },
-                    label = { Text("API Key (Gemini or OpenRouter)") },
+                    label = { Text("API Key (Gemini, OpenAI, or OpenRouter)") },
                     placeholder = { Text("Paste your API key here", color = TextMuted) },
                     modifier = Modifier.fillMaxWidth(),
                     visualTransformation = if (showApiKey) VisualTransformation.None
@@ -102,7 +102,7 @@ fun SettingsScreen(
 
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    "MobileClaw auto-detects your provider \n(AIza... keys = Gemini 2.5 Flash, sk-or-... keys = OpenRouter Gemini 2.5 Flash)",
+                    "MobileClaw auto-detects your provider \n(AIza... keys = Gemini 2.5 Flash, sk-proj-... = GPT-4o, sk-or-... keys = OpenRouter)",
                     style = MaterialTheme.typography.bodySmall,
                     color = Secondary
                 )

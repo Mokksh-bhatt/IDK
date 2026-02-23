@@ -24,15 +24,18 @@ import java.util.concurrent.TimeUnit
  * Auto-detects which provider to use based on the API key format.
  */
 class AIClient(
-    private var apiKey: String
+    apiKeyRaw: String
 ) {
+    private var apiKey: String = apiKeyRaw.trim()
+
     companion object {
         private const val TAG = "AIClient"
         private const val OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
         private const val GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models"
+        private const val OPENAI_URL = "https://api.openai.com/v1/chat/completions"
     }
 
-    enum class Provider { GEMINI, OPENROUTER }
+    enum class Provider { GEMINI, OPENROUTER, OPENAI }
 
     private val client = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
@@ -45,7 +48,7 @@ class AIClient(
         isLenient = true
     }
 
-    fun updateApiKey(key: String) { apiKey = key }
+    fun updateApiKey(key: String) { apiKey = key.trim() }
 
     /**
      * Auto-detect provider from the API key format.
@@ -53,6 +56,7 @@ class AIClient(
     private fun detectProvider(): Provider {
         return when {
             apiKey.startsWith("sk-or-") -> Provider.OPENROUTER
+            apiKey.startsWith("sk-proj-") || (apiKey.startsWith("sk-") && !apiKey.startsWith("sk-or-")) -> Provider.OPENAI
             else -> Provider.GEMINI // Default to Gemini for Google AI keys
         }
     }
@@ -137,7 +141,8 @@ Analyze the screenshot and decide your next action. Respond with ONLY a JSON obj
 
             val (request, providerName) = when (provider) {
                 Provider.GEMINI -> buildGeminiRequest(base64Image, userPromptText, "gemini-2.5-flash") to "Gemini"
-                Provider.OPENROUTER -> buildOpenRouterRequest(base64Image, userPromptText, "google/gemini-2.5-flash") to "OpenRouter"
+                Provider.OPENROUTER -> buildOpenAiCompatibleRequest(base64Image, userPromptText, "google/gemini-2.5-flash", OPENROUTER_URL) to "OpenRouter"
+                Provider.OPENAI -> buildOpenAiCompatibleRequest(base64Image, userPromptText, "gpt-4o", OPENAI_URL) to "OpenAI"
             }
 
             Log.d(TAG, "Using provider: $providerName")
@@ -152,7 +157,7 @@ Analyze the screenshot and decide your next action. Respond with ONLY a JSON obj
 
             val agentResponse = when (provider) {
                 Provider.GEMINI -> parseGeminiResponse(responseBody)
-                Provider.OPENROUTER -> parseOpenRouterResponse(responseBody)
+                Provider.OPENROUTER, Provider.OPENAI -> parseOpenAiCompatibleResponse(responseBody, providerName)
             }
             Result.success(agentResponse)
 
@@ -230,9 +235,9 @@ Analyze the screenshot and decide your next action. Respond with ONLY a JSON obj
         }
     }
 
-    // ===== OPENROUTER API =====
+    // ===== OPENAI / OPENROUTER COMPATIBLE API =====
 
-    private fun buildOpenRouterRequest(base64Image: String, userPromptText: String, model: String): Request {
+    private fun buildOpenAiCompatibleRequest(base64Image: String, userPromptText: String, model: String, url: String): Request {
         val requestBody = buildJsonObject {
             put("model", model)
             put("response_format", buildJsonObject {
@@ -265,7 +270,7 @@ Analyze the screenshot and decide your next action. Respond with ONLY a JSON obj
         }
 
         return Request.Builder()
-            .url(OPENROUTER_URL)
+            .url(url)
             .addHeader("Authorization", "Bearer $apiKey")
             .addHeader("HTTP-Referer", "https://github.com/MobileClaw")
             .addHeader("X-Title", "MobileClaw Agent")
@@ -273,7 +278,7 @@ Analyze the screenshot and decide your next action. Respond with ONLY a JSON obj
             .build()
     }
 
-    private fun parseOpenRouterResponse(responseBody: String): AgentResponse {
+    private fun parseOpenAiCompatibleResponse(responseBody: String, providerName: String): AgentResponse {
         val jsonResponse = json.parseToJsonElement(responseBody).jsonObject
         val choices = jsonResponse["choices"]?.jsonArray
             ?: throw Exception("No choices in response")
@@ -292,7 +297,7 @@ Analyze the screenshot and decide your next action. Respond with ONLY a JSON obj
         return try {
             json.decodeFromString<AgentResponse>(cleanJson)
         } catch (e: Exception) {
-            Log.w(TAG, "OpenRouter parse failed, trying manual: ${e.message}")
+            Log.w(TAG, "$providerName parse failed, trying manual: ${e.message}")
             parseManually(cleanJson)
         }
     }
