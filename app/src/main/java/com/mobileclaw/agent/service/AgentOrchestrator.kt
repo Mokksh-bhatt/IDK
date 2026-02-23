@@ -160,6 +160,14 @@ class AgentOrchestrator(
             val screenWidth = captureService.screenWidth
             val screenHeight = captureService.screenHeight
 
+            // == EXTRACT UI TREE for semantic navigation ==
+            val uiTree = try {
+                AgentAccessibilityService.instance?.getScreenUiTree() ?: ""
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to get UI tree", e)
+                ""
+            }
+
             // == THINK: Send to AI ==
             addMessage(ChatMessage(
                 role = MessageRole.AGENT,
@@ -172,7 +180,8 @@ class AgentOrchestrator(
                 taskDescription = taskDescription,
                 previousActions = previousActions,
                 screenWidth = screenWidth,
-                screenHeight = screenHeight
+                screenHeight = screenHeight,
+                uiTree = uiTree
             )
 
             screenshot.recycle()

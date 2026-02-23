@@ -28,6 +28,9 @@ jobs:
       run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses || true
 
     - name: Build Debug APK
+      env:
+        VERSION_NAME: 1.0.${{ github.run_number }}
+        VERSION_CODE: ${{ github.run_number }}
       run: ./gradlew assembleDebug --no-daemon --console=plain
 
     - name: Upload APK

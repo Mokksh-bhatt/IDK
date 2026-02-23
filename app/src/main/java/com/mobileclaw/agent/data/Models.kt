@@ -19,6 +19,7 @@ data class AgentAction(
 @Serializable
 enum class ActionType {
     TAP,
+    TAP_NODE,
     LONG_PRESS,
     TYPE_TEXT,
     SCROLL,

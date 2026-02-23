@@ -5,6 +5,7 @@ import android.accessibilityservice.GestureDescription
 import android.content.Intent
 import android.graphics.Path
 import android.os.Bundle
+import android.graphics.Rect
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
@@ -54,6 +55,11 @@ class AgentAccessibilityService : AccessibilityService() {
                 val y = action.y ?: return false
                 Log.d(TAG, "TAP at ($x, $y)")
                 performTap(x.toFloat(), y.toFloat())
+            }
+            ActionType.TAP_NODE -> {
+                val nodeText = action.text ?: return false
+                Log.d(TAG, "TAP_NODE: $nodeText")
+                performTapNode(nodeText)
             }
             ActionType.LONG_PRESS -> {
                 val x = action.x ?: return false
@@ -264,5 +270,146 @@ class AgentAccessibilityService : AccessibilityService() {
                 continuation.resume(false)
             }
         }
+    }
+
+    // ===== SEMANTIC UI TREE =====
+
+    /**
+     * Extracts structured info about all visible UI elements from the
+     * live Android accessibility tree. Returns a compact text description
+     * the AI can use to identify elements and their exact screen bounds.
+     */
+    fun getScreenUiTree(): String {
+        val root = rootInActiveWindow ?: return "[No accessibility window available]"
+        val sb = StringBuilder()
+        sb.appendLine("=== Screen UI Elements ===")
+        try {
+            extractNodes(root, sb, depth = 0)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error extracting UI tree", e)
+            sb.appendLine("[Error reading UI tree]")
+        } finally {
+            root.recycle()
+        }
+        return sb.toString()
+    }
+
+    private fun extractNodes(node: AccessibilityNodeInfo, sb: StringBuilder, depth: Int) {
+        if (depth > 12) return // Prevent stack overflow on deep trees
+
+        val bounds = Rect()
+        node.getBoundsInScreen(bounds)
+
+        val text = node.text?.toString()?.take(60) ?: ""
+        val desc = node.contentDescription?.toString()?.take(60) ?: ""
+        val className = node.className?.toString()?.substringAfterLast('.') ?: ""
+        val isClickable = node.isClickable
+        val isEditable = node.isEditable
+        val isCheckable = node.isCheckable
+        val isChecked = node.isChecked
+
+        // Only emit nodes that have useful info
+        val hasLabel = text.isNotEmpty() || desc.isNotEmpty()
+        val isInteractive = isClickable || isEditable || isCheckable
+
+        if (hasLabel || isInteractive) {
+            val label = when {
+                text.isNotEmpty() && desc.isNotEmpty() -> "\"$text\" ($desc)"
+                text.isNotEmpty() -> "\"$text\""
+                desc.isNotEmpty() -> "($desc)"
+                else -> ""
+            }
+
+            val flags = buildList {
+                if (isClickable) add("clickable")
+                if (isEditable) add("editable")
+                if (isCheckable) add(if (isChecked) "checked" else "unchecked")
+            }.joinToString(",")
+
+            val indent = "  ".repeat(depth.coerceAtMost(6))
+            sb.appendLine("${indent}[$className] $label ${if (flags.isNotEmpty()) "{$flags}" else ""} bounds=[${bounds.left},${bounds.top},${bounds.right},${bounds.bottom}]")
+        }
+
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i) ?: continue
+            try {
+                extractNodes(child, sb, depth + 1)
+            } finally {
+                child.recycle()
+            }
+        }
+    }
+
+    /**
+     * Find a node by its text or content description and click it.
+     * Falls back to tapping the center of the node's bounds if
+     * ACTION_CLICK doesn't work.
+     */
+    private suspend fun performTapNode(nodeText: String): Boolean {
+        val root = rootInActiveWindow ?: return false
+        try {
+            val target = findNodeByText(root, nodeText)
+            if (target != null) {
+                // Try native click first (100% accurate)
+                if (target.isClickable) {
+                    val clicked = target.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                    target.recycle()
+                    if (clicked) return true
+                }
+
+                // Walk up the tree to find a clickable parent
+                var parent = target.parent
+                while (parent != null) {
+                    if (parent.isClickable) {
+                        val clicked = parent.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                        parent.recycle()
+                        target.recycle()
+                        if (clicked) return true
+                    }
+                    val grandparent = parent.parent
+                    parent.recycle()
+                    parent = grandparent
+                }
+
+                // Last resort: tap the center of the bounds
+                val bounds = Rect()
+                target.getBoundsInScreen(bounds)
+                target.recycle()
+                val cx = (bounds.left + bounds.right) / 2f
+                val cy = (bounds.top + bounds.bottom) / 2f
+                Log.d(TAG, "TAP_NODE fallback to gesture at ($cx, $cy)")
+                return performTap(cx, cy)
+            }
+            Log.w(TAG, "TAP_NODE: could not find node with text '$nodeText'")
+            return false
+        } finally {
+            root.recycle()
+        }
+    }
+
+    private fun findNodeByText(root: AccessibilityNodeInfo, target: String): AccessibilityNodeInfo? {
+        val targetLower = target.lowercase()
+        // Try exact match first
+        val exactMatches = root.findAccessibilityNodeInfosByText(target)
+        if (!exactMatches.isNullOrEmpty()) {
+            return exactMatches[0] // caller is responsible for recycling
+        }
+        // Manual recursive search for content description matches
+        return findNodeRecursive(root, targetLower)
+    }
+
+    private fun findNodeRecursive(node: AccessibilityNodeInfo, target: String): AccessibilityNodeInfo? {
+        val text = node.text?.toString()?.lowercase() ?: ""
+        val desc = node.contentDescription?.toString()?.lowercase() ?: ""
+        if (text.contains(target) || desc.contains(target)) {
+            return AccessibilityNodeInfo.obtain(node)
+        }
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i) ?: continue
+            val found = findNodeRecursive(child, target)
+            child.recycle()
+            if (found != null) return found
+        }
+        return null
     }
 }

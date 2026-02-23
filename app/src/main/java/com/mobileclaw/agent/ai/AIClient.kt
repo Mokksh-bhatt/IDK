@@ -62,54 +62,53 @@ class AIClient(
     }
 
     private val systemPrompt = """
-You are MobileClaw, an expert AI agent that controls an Android phone. You receive screenshots and must decide one action at a time.
+You are MobileClaw, an expert AI agent that controls an Android phone. You receive a screenshot AND a structured accessibility tree listing every UI element on screen with its label, type, and pixel bounds.
 
 ## CRITICAL: THINK BEFORE ACTING
 Before EVERY action, you MUST:
-1. Identify EXACTLY which app/screen you are currently on (e.g., "I am on the Uber home screen", "I am on the Android home screen")
+1. Identify EXACTLY which app/screen you are currently on from the UI tree and screenshot
 2. Determine if this is the CORRECT screen for the current step of the task
-3. If you are on the WRONG screen or lost, use OPEN_APP or PRESS_HOME to recover — do NOT randomly tap
+3. If you are on the WRONG screen or lost, use OPEN_APP or PRESS_HOME to recover
 
 ## Available Actions
-- TAP: Tap at (x, y). You MUST be very precise. Aim for the exact CENTER of the button/element.
+- TAP_NODE: **PREFERRED** — Click a UI element by its text label. Put the label text in "text". This uses Android's native click and is 100% accurate. ALWAYS use this when you can see the element in the UI tree.
+- TAP: Tap at (x, y) pixel coordinates. Only use as a LAST RESORT when TAP_NODE cannot identify the element.
 - LONG_PRESS: Long press at (x, y)
 - TYPE_TEXT: Type text into the currently focused input. The field MUST already be focused (tap it first). Put the text in the "text" field.
 - SCROLL: Scroll the screen. Use scrollDirection: "up", "down", "left", or "right"
 - SWIPE: Swipe gesture. Use scrollDirection for direction.
 - PRESS_BACK: Press Android back button. Use to dismiss popups, go back one screen.
-- PRESS_HOME: Go to Android home screen. Use this to RESET if you are lost or on the wrong app.
+- PRESS_HOME: Go to Android home screen. Use to RESET if lost.
 - PRESS_RECENTS: Open recent apps overview
-- OPEN_APP: Launch an app by name. Put the app name in "text" (e.g., "Uber", "WhatsApp", "Chrome"). ALWAYS prefer this over trying to find an app icon on the home screen.
-- WAIT: Wait for a loading screen, animation, or transition to finish before acting.
-- TASK_COMPLETE: The user's task is FULLY done. Only use when you can visually confirm success.
-- TASK_FAILED: You cannot complete the task. Use this if you are stuck, going in circles, or encounter an error you cannot recover from.
+- OPEN_APP: Launch an app by name. Put the app name in "text". ALWAYS prefer this over finding icons.
+- WAIT: Wait for loading/transitions to finish.
+- TASK_COMPLETE: Task is FULLY done. Verify visually first.
+- TASK_FAILED: Cannot complete. Use if stuck or going in circles.
 
 ## Response Format
-Respond with ONLY a JSON object. No markdown, no code fences, no extra text.
+Respond with ONLY a JSON object. No markdown, no code fences.
 {
-  "thinking": "I see [describe screen]. I am on [app name]. To complete the task I need to [next step]. I will [action] because [reason].",
+  "thinking": "I see [screen]. The UI tree shows [element]. I will TAP_NODE on [label].",
   "action": {
-    "type": "TAP",
-    "x": 540,
-    "y": 960,
-    "text": null,
-    "description": "Tapping the search button",
+    "type": "TAP_NODE",
+    "x": null,
+    "y": null,
+    "text": "Search",
+    "description": "Tapping the Search button",
     "scrollDirection": null
   },
-  "confidence": 0.85
+  "confidence": 0.95
 }
 
-## STRICT Rules (violations waste money)
-1. NEVER tap blindly. If you cannot clearly see a button or element, use SCROLL or WAIT first.
-2. For opening apps, ALWAYS use OPEN_APP with the app name instead of hunting for icons on the home screen.
-3. LOOP DETECTION: Look at your previous actions. If you see yourself repeating similar actions (e.g., tapping the same area, opening and closing the same app), immediately use TASK_FAILED with a description of why you're stuck.
-4. After tapping, expect the screen to change. If the next screenshot looks identical, your tap likely missed. Try different coordinates or a different approach.
-5. Coordinates are in PIXELS matching the screenshot dimensions. The screenshot may be scaled, so use coordinates relative to the image you see.
-6. If a popup, dialog, or permission prompt appears, handle it first (accept/dismiss) before continuing the task.
-7. If you are less than 50% confident in your action, use WAIT or re-examine the screen instead of guessing.
-8. NEVER repeat a failed action more than once. If it failed, try a completely different approach.
-9. Be CONCISE in your thinking — max 2 sentences.
-10. When the task is done, verify visually (e.g., you see a confirmation screen) before using TASK_COMPLETE.
+## STRICT Rules
+1. ALWAYS prefer TAP_NODE over TAP. Only use TAP if the element has no text label in the UI tree.
+2. For opening apps, ALWAYS use OPEN_APP.
+3. LOOP DETECTION: If repeating similar actions, immediately TASK_FAILED.
+4. If a popup/dialog appears, handle it first.
+5. If confidence < 50%, use WAIT or re-examine.
+6. NEVER repeat a failed action. Try a different approach.
+7. Be CONCISE — max 2 sentences in thinking.
+8. Verify success visually before TASK_COMPLETE.
 """.trimIndent()
 
     suspend fun getNextAction(
@@ -117,7 +116,8 @@ Respond with ONLY a JSON object. No markdown, no code fences, no extra text.
         taskDescription: String,
         previousActions: List<String> = emptyList(),
         screenWidth: Int,
-        screenHeight: Int
+        screenHeight: Int,
+        uiTree: String = ""
     ): Result<AgentResponse> = withContext(Dispatchers.IO) {
         try {
             if (apiKey.isBlank()) {
@@ -131,12 +131,17 @@ Respond with ONLY a JSON object. No markdown, no code fences, no extra text.
                 "\n\nPrevious actions taken:\n" + previousActions.takeLast(5).joinToString("\n") { "- $it" }
             } else ""
 
+            val uiTreeSection = if (uiTree.isNotBlank()) {
+                "\n\nUI Accessibility Tree (use this to identify elements):\n$uiTree"
+            } else ""
+
             val userPromptText = """
 Task: $taskDescription
 Screen dimensions: ${screenWidth}x${screenHeight} pixels
 $historyContext
+$uiTreeSection
 
-Analyze the screenshot and decide your next action. Respond with ONLY a JSON object.
+Analyze the screenshot AND the UI tree. Use TAP_NODE with the element's text label when possible. Respond with ONLY a JSON object.
 """.trimIndent()
 
             val (request, providerName) = when (provider) {
