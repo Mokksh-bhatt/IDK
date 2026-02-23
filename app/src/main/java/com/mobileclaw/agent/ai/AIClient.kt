@@ -96,8 +96,8 @@ Respond ONLY with JSON: {"thinking":"...","action":{"type":"TAP_NODE","text":"Se
             val userPromptText = "Task: $taskDescription\n${screenWidth}x${screenHeight}$historyContext$uiTreeSection\nJSON only."
 
             val (request, providerName) = when (provider) {
-                Provider.GEMINI -> buildGeminiRequest(base64Image, userPromptText, "gemini-2.0-flash") to "Gemini"
-                Provider.OPENROUTER -> buildOpenAiCompatibleRequest(base64Image, userPromptText, "google/gemini-2.0-flash", OPENROUTER_URL) to "OpenRouter"
+                Provider.GEMINI -> buildGeminiRequest(base64Image, userPromptText, "gemini-1.5-flash") to "Gemini"
+                Provider.OPENROUTER -> buildOpenAiCompatibleRequest(base64Image, userPromptText, "google/gemini-1.5-flash", OPENROUTER_URL) to "OpenRouter"
                 Provider.OPENAI -> buildOpenAiCompatibleRequest(base64Image, userPromptText, "gpt-4o-mini", OPENAI_URL) to "OpenAI"
             }
 
