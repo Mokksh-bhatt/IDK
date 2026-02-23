@@ -280,54 +280,38 @@ class AgentAccessibilityService : AccessibilityService() {
      * the AI can use to identify elements and their exact screen bounds.
      */
     fun getScreenUiTree(): String {
-        val root = rootInActiveWindow ?: return "[No accessibility window available]"
+        val root = rootInActiveWindow ?: return ""
         val sb = StringBuilder()
-        sb.appendLine("=== Screen UI Elements ===")
         try {
             extractNodes(root, sb, depth = 0)
         } catch (e: Exception) {
             Log.e(TAG, "Error extracting UI tree", e)
-            sb.appendLine("[Error reading UI tree]")
         } finally {
             root.recycle()
         }
-        return sb.toString()
+        // Hard cap to prevent token explosion
+        val result = sb.toString()
+        return if (result.length > 3000) result.take(3000) + "\n[truncated]" else result
     }
 
     private fun extractNodes(node: AccessibilityNodeInfo, sb: StringBuilder, depth: Int) {
-        if (depth > 12) return // Prevent stack overflow on deep trees
+        if (depth > 10 || sb.length > 3000) return
 
-        val bounds = Rect()
-        node.getBoundsInScreen(bounds)
-
-        val text = node.text?.toString()?.take(60) ?: ""
-        val desc = node.contentDescription?.toString()?.take(60) ?: ""
-        val className = node.className?.toString()?.substringAfterLast('.') ?: ""
+        val text = node.text?.toString()?.take(30) ?: ""
+        val desc = node.contentDescription?.toString()?.take(30) ?: ""
         val isClickable = node.isClickable
         val isEditable = node.isEditable
-        val isCheckable = node.isCheckable
-        val isChecked = node.isChecked
 
-        // Only emit nodes that have useful info
         val hasLabel = text.isNotEmpty() || desc.isNotEmpty()
-        val isInteractive = isClickable || isEditable || isCheckable
+        val isInteractive = isClickable || isEditable
 
-        if (hasLabel || isInteractive) {
-            val label = when {
-                text.isNotEmpty() && desc.isNotEmpty() -> "\"$text\" ($desc)"
-                text.isNotEmpty() -> "\"$text\""
-                desc.isNotEmpty() -> "($desc)"
-                else -> ""
-            }
-
-            val flags = buildList {
-                if (isClickable) add("clickable")
-                if (isEditable) add("editable")
-                if (isCheckable) add(if (isChecked) "checked" else "unchecked")
-            }.joinToString(",")
-
-            val indent = "  ".repeat(depth.coerceAtMost(6))
-            sb.appendLine("${indent}[$className] $label ${if (flags.isNotEmpty()) "{$flags}" else ""} bounds=[${bounds.left},${bounds.top},${bounds.right},${bounds.bottom}]")
+        // Only emit nodes that are BOTH labeled AND interactive (saves huge token count)
+        if (hasLabel && isInteractive) {
+            val bounds = Rect()
+            node.getBoundsInScreen(bounds)
+            val label = if (text.isNotEmpty()) text else desc
+            val flag = if (isEditable) "edit" else "btn"
+            sb.appendLine("[$flag] \"$label\" [${bounds.left},${bounds.top},${bounds.right},${bounds.bottom}]")
         }
 
         for (i in 0 until node.childCount) {
