@@ -73,8 +73,8 @@ fun SettingsScreen(
                         localApiKey = it
                         onApiKeyChange(it)
                     },
-                    label = { Text("OpenRouter API Key") },
-                    placeholder = { Text("Enter your OpenRouter key", color = TextMuted) },
+                    label = { Text("API Key (Gemini or OpenRouter)") },
+                    placeholder = { Text("Paste your API key here", color = TextMuted) },
                     modifier = Modifier.fillMaxWidth(),
                     visualTransformation = if (showApiKey) VisualTransformation.None
                         else PasswordVisualTransformation(),
@@ -107,6 +107,12 @@ fun SettingsScreen(
                 // Model selector
                 var expanded by remember { mutableStateOf(false) }
                 val models = listOf(
+                    // Gemini Direct (use with Gemini API keys)
+                    "gemini-2.0-flash",
+                    "gemini-2.0-flash-lite",
+                    "gemini-1.5-pro",
+                    "gemini-1.5-flash",
+                    // OpenRouter (use with sk-or- keys)
                     "openai/gpt-4o",
                     "openai/gpt-4o-mini",
                     "anthropic/claude-3.5-sonnet",
@@ -158,7 +164,7 @@ fun SettingsScreen(
 
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    "Get your API key at openrouter.ai",
+                    "Gemini keys (AIza...) → use gemini-* models\nOpenRouter keys (sk-or-...) → use other models",
                     style = MaterialTheme.typography.bodySmall,
                     color = Secondary
                 )

@@ -1,7 +1,7 @@
 package com.mobileclaw.agent.service
 
 import android.util.Log
-import com.mobileclaw.agent.ai.OpenRouterClient
+import com.mobileclaw.agent.ai.AIClient
 import com.mobileclaw.agent.data.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -14,7 +14,7 @@ import kotlinx.coroutines.flow.asStateFlow
  * Integrates with FloatingOverlayService for live status indicators.
  */
 class AgentOrchestrator(
-    private val aiClient: OpenRouterClient
+    private val aiClient: AIClient
 ) {
     companion object {
         private const val TAG = "AgentOrchestrator"

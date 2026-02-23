@@ -26,7 +26,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
-import com.mobileclaw.agent.ai.OpenRouterClient
+import com.mobileclaw.agent.ai.AIClient
 import com.mobileclaw.agent.data.*
 import com.mobileclaw.agent.service.*
 import com.mobileclaw.agent.ui.screens.HomeScreen
@@ -38,7 +38,7 @@ import kotlinx.coroutines.launch
 class MainActivity : ComponentActivity() {
 
     private lateinit var preferencesManager: com.mobileclaw.agent.data.PreferencesManager
-    private lateinit var aiClient: OpenRouterClient
+    private lateinit var aiClient: AIClient
     private lateinit var orchestrator: AgentOrchestrator
     private lateinit var updateChecker: UpdateChecker
 
@@ -106,7 +106,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
 
         preferencesManager = PreferencesManager(this)
-        aiClient = OpenRouterClient("") // API key set later from prefs
+        aiClient = AIClient("") // API key set later from prefs
         orchestrator = AgentOrchestrator(aiClient)
         updateChecker = UpdateChecker(this)
 

@@ -26,7 +26,7 @@ class PreferencesManager(private val context: Context) {
     }
 
     val modelName: Flow<String> = context.dataStore.data.map { prefs ->
-        prefs[MODEL_NAME] ?: "openai/gpt-4o"
+        prefs[MODEL_NAME] ?: "gemini-2.0-flash"
     }
 
     val maxSteps: Flow<Int> = context.dataStore.data.map { prefs ->
