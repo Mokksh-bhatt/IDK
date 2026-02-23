@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">MobileClaw</string>
+    <string name="accessibility_service_description">MobileClaw AI Agent needs accessibility access to perform taps, scrolls, and text input on your behalf across apps.</string>
+    <string name="notification_channel_name">Agent Running</string>
+    <string name="notification_channel_description">Shows when the AI agent is actively performing tasks</string>
+</resources>
