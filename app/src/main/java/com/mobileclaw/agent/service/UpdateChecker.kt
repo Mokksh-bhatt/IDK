@@ -25,7 +25,6 @@ class UpdateChecker(private val context: Context) {
         // Update this to the user's repo
         private const val GITHUB_REPO = "Mokksh-bhatt/IDK"
         private const val RELEASES_URL = "https://api.github.com/repos/$GITHUB_REPO/releases/latest"
-        const val CURRENT_VERSION = "1.0.0"
     }
 
     private val client = OkHttpClient.Builder()
@@ -75,7 +74,8 @@ class UpdateChecker(private val context: Context) {
             val downloadUrl = apkAsset?.jsonObject?.get("browser_download_url")?.jsonPrimitive?.content
                 ?: "https://github.com/$GITHUB_REPO/releases/latest" // Fallback to release page
 
-            val isNewer = isVersionNewer(latestVersion, CURRENT_VERSION)
+            val currentVersion = context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "1.0.0"
+            val isNewer = isVersionNewer(latestVersion, currentVersion)
 
             UpdateInfo(
                 version = latestVersion,
@@ -103,7 +103,30 @@ class UpdateChecker(private val context: Context) {
                     .setMimeType("application/vnd.android.package-archive")
 
                 val dm = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
-                dm.enqueue(request)
+                val downloadId = dm.enqueue(request)
+
+                // Register receiver to auto-install when done
+                val receiver = object : android.content.BroadcastReceiver() {
+                    override fun onReceive(c: Context?, intent: Intent?) {
+                        val id = intent?.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1)
+                        if (id == downloadId) {
+                            val uri = dm.getUriForDownloadedFile(downloadId)
+                            if (uri != null) {
+                                val installIntent = Intent(Intent.ACTION_VIEW)
+                                installIntent.setDataAndType(uri, "application/vnd.android.package-archive")
+                                installIntent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION
+                                context.startActivity(installIntent)
+                            }
+                            try { context.unregisterReceiver(this) } catch(e: Exception) {}
+                        }
+                    }
+                }
+                
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                    context.registerReceiver(receiver, android.content.IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE), Context.RECEIVER_EXPORTED)
+                } else {
+                    context.registerReceiver(receiver, android.content.IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE))
+                }
             } else {
                 // Open the browser to the release page
                 val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
