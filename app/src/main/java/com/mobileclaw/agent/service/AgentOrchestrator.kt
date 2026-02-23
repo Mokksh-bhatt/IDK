@@ -173,6 +173,16 @@ class AgentOrchestrator(
             }
 
             if (screenshot == null) {
+                addMessage(ChatMessage(
+                    role = MessageRole.SYSTEM,
+                    content = "⚠️ Failed to capture screen, retrying..."
+                ))
+                delay(1000)
+                continue
+            }
+
+            val screenWidth = captureService.screenWidth
+            val screenHeight = captureService.screenHeight
 
             // == THINK: Send to AI ==
             addMessage(ChatMessage(
