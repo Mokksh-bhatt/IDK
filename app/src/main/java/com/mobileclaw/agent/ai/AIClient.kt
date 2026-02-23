@@ -24,8 +24,7 @@ import java.util.concurrent.TimeUnit
  * Auto-detects which provider to use based on the API key format.
  */
 class AIClient(
-    private var apiKey: String,
-    private var modelName: String = "gemini-2.0-flash"
+    private var apiKey: String
 ) {
     companion object {
         private const val TAG = "AIClient"
@@ -47,7 +46,6 @@ class AIClient(
     }
 
     fun updateApiKey(key: String) { apiKey = key }
-    fun updateModel(model: String) { modelName = model }
 
     /**
      * Auto-detect provider from the API key format.
@@ -138,11 +136,11 @@ Analyze the screenshot and decide your next action. Respond with ONLY a JSON obj
 """.trimIndent()
 
             val (request, providerName) = when (provider) {
-                Provider.GEMINI -> buildGeminiRequest(base64Image, userPromptText) to "Gemini"
-                Provider.OPENROUTER -> buildOpenRouterRequest(base64Image, userPromptText) to "OpenRouter"
+                Provider.GEMINI -> buildGeminiRequest(base64Image, userPromptText, "gemini-2.5-flash") to "Gemini"
+                Provider.OPENROUTER -> buildOpenRouterRequest(base64Image, userPromptText, "google/gemini-2.5-flash") to "OpenRouter"
             }
 
-            Log.d(TAG, "Using provider: $providerName with model: $modelName")
+            Log.d(TAG, "Using provider: $providerName")
 
             val response = client.newCall(request).execute()
             val responseBody = response.body?.string() ?: throw Exception("Empty response from $providerName")
@@ -166,8 +164,8 @@ Analyze the screenshot and decide your next action. Respond with ONLY a JSON obj
 
     // ===== GEMINI DIRECT API =====
 
-    private fun buildGeminiRequest(base64Image: String, userPromptText: String): Request {
-        val url = "$GEMINI_BASE_URL/$modelName:generateContent?key=$apiKey"
+    private fun buildGeminiRequest(base64Image: String, userPromptText: String, model: String): Request {
+        val url = "$GEMINI_BASE_URL/$model:generateContent?key=$apiKey"
 
         val requestBody = buildJsonObject {
             put("system_instruction", buildJsonObject {
@@ -234,9 +232,9 @@ Analyze the screenshot and decide your next action. Respond with ONLY a JSON obj
 
     // ===== OPENROUTER API =====
 
-    private fun buildOpenRouterRequest(base64Image: String, userPromptText: String): Request {
+    private fun buildOpenRouterRequest(base64Image: String, userPromptText: String, model: String): Request {
         val requestBody = buildJsonObject {
-            put("model", modelName)
+            put("model", model)
             put("response_format", buildJsonObject {
                 put("type", "json_object")
             })

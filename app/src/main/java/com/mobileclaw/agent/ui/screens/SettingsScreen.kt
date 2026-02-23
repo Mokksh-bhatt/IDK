@@ -26,11 +26,9 @@ import com.mobileclaw.agent.ui.theme.*
 @Composable
 fun SettingsScreen(
     apiKey: String,
-    modelName: String,
     maxSteps: Int,
     captureInterval: Int,
     onApiKeyChange: (String) -> Unit,
-    onModelNameChange: (String) -> Unit,
     onMaxStepsChange: (Int) -> Unit,
     onCaptureIntervalChange: (Int) -> Unit,
     onBack: () -> Unit
@@ -102,69 +100,9 @@ fun SettingsScreen(
                     singleLine = true
                 )
 
-                Spacer(Modifier.height(8.dp))
-
-                // Model selector
-                var expanded by remember { mutableStateOf(false) }
-                val models = listOf(
-                    // Gemini Direct (use with Gemini API keys)
-                    "gemini-2.0-flash",
-                    "gemini-2.0-flash-lite",
-                    "gemini-1.5-pro",
-                    "gemini-1.5-flash",
-                    // OpenRouter (use with sk-or- keys)
-                    "openai/gpt-4o",
-                    "openai/gpt-4o-mini",
-                    "anthropic/claude-3.5-sonnet",
-                    "google/gemini-2.5-flash"
-                )
-
-                ExposedDropdownMenuBox(
-                    expanded = expanded,
-                    onExpandedChange = { expanded = !expanded }
-                ) {
-                    OutlinedTextField(
-                        value = modelName,
-                        onValueChange = {},
-                        readOnly = true,
-                        label = { Text("AI Model") },
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .menuAnchor(),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = Primary,
-                            unfocusedBorderColor = TextMuted.copy(alpha = 0.3f),
-                            focusedContainerColor = BackgroundSurface,
-                            unfocusedContainerColor = BackgroundSurface,
-                            focusedTextColor = TextPrimary,
-                            unfocusedTextColor = TextPrimary,
-                            focusedLabelColor = PrimaryLight,
-                            unfocusedLabelColor = TextSecondary
-                        ),
-                        shape = RoundedCornerShape(12.dp)
-                    )
-
-                    ExposedDropdownMenu(
-                        expanded = expanded,
-                        onDismissRequest = { expanded = false },
-                        modifier = Modifier.background(BackgroundSurface)
-                    ) {
-                        models.forEach { model ->
-                            DropdownMenuItem(
-                                text = { Text(model, color = TextPrimary) },
-                                onClick = {
-                                    onModelNameChange(model)
-                                    expanded = false
-                                }
-                            )
-                        }
-                    }
-                }
-
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    "Gemini keys (AIza...) → use gemini-* models\nOpenRouter keys (sk-or-...) → use other models",
+                    "MobileClaw auto-detects your provider \n(AIza... keys = Gemini 2.5 Flash, sk-or-... keys = OpenRouter Gemini 2.5 Flash)",
                     style = MaterialTheme.typography.bodySmall,
                     color = Secondary
                 )

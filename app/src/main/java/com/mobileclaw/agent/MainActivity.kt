@@ -121,10 +121,8 @@ class MainActivity : ComponentActivity() {
         // Load saved settings
         lifecycleScope.launch {
             val savedKey = preferencesManager.apiKey.first()
-            val savedModel = preferencesManager.modelName.first()
             val savedInterval = preferencesManager.captureInterval.first()
             aiClient.updateApiKey(savedKey)
-            aiClient.updateModel(savedModel)
             orchestrator.setCaptureInterval(savedInterval.toLong())
         }
 
@@ -138,7 +136,6 @@ class MainActivity : ComponentActivity() {
 
                 // Settings state
                 var apiKey by remember { mutableStateOf("") }
-                var modelName by remember { mutableStateOf("openai/gpt-4o") }
                 var maxSteps by remember { mutableIntStateOf(50) }
                 var captureInterval by remember { mutableIntStateOf(2000) }
 
@@ -146,12 +143,8 @@ class MainActivity : ComponentActivity() {
                 var isAccessibilityEnabled by remember { mutableStateOf(false) }
                 var isScreenCaptureActive by remember { mutableStateOf(false) }
 
-                // Load prefs into compose state
                 LaunchedEffect(Unit) {
                     preferencesManager.apiKey.collect { apiKey = it }
-                }
-                LaunchedEffect(Unit) {
-                    preferencesManager.modelName.collect { modelName = it }
                 }
                 LaunchedEffect(Unit) {
                     preferencesManager.maxSteps.collect { maxSteps = it }
@@ -241,19 +234,12 @@ class MainActivity : ComponentActivity() {
                     composable("settings") {
                         SettingsScreen(
                             apiKey = apiKey,
-                            modelName = modelName,
                             maxSteps = maxSteps,
                             captureInterval = captureInterval,
                             onApiKeyChange = { key ->
                                 lifecycleScope.launch {
                                     preferencesManager.setApiKey(key)
                                     aiClient.updateApiKey(key)
-                                }
-                            },
-                            onModelNameChange = { model ->
-                                lifecycleScope.launch {
-                                    preferencesManager.setModelName(model)
-                                    aiClient.updateModel(model)
                                 }
                             },
                             onMaxStepsChange = { steps ->

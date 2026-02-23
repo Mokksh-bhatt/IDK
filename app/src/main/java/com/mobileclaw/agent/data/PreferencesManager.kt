@@ -15,18 +15,13 @@ private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(na
 class PreferencesManager(private val context: Context) {
 
     companion object {
-        private val API_KEY = stringPreferencesKey("openrouter_api_key")
-        private val MODEL_NAME = stringPreferencesKey("model_name")
-        private val MAX_STEPS = intPreferencesKey("max_steps")
-        private val CAPTURE_INTERVAL = intPreferencesKey("capture_interval_ms")
+        val API_KEY = stringPreferencesKey("openrouter_api_key")
+        val MAX_STEPS = intPreferencesKey("max_steps")
+        val CAPTURE_INTERVAL = intPreferencesKey("capture_interval_ms")
     }
 
     val apiKey: Flow<String> = context.dataStore.data.map { prefs ->
         prefs[API_KEY] ?: ""
-    }
-
-    val modelName: Flow<String> = context.dataStore.data.map { prefs ->
-        prefs[MODEL_NAME] ?: "gemini-2.0-flash"
     }
 
     val maxSteps: Flow<Int> = context.dataStore.data.map { prefs ->
@@ -38,15 +33,8 @@ class PreferencesManager(private val context: Context) {
     }
 
     suspend fun setApiKey(key: String) {
-        context.dataStore.data
         context.dataStore.edit { prefs ->
             prefs[API_KEY] = key
-        }
-    }
-
-    suspend fun setModelName(name: String) {
-        context.dataStore.edit { prefs ->
-            prefs[MODEL_NAME] = name
         }
     }
 
