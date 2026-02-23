@@ -1,10 +1,13 @@
 package com.mobileclaw.agent
 
 import android.app.Activity
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.media.projection.MediaProjectionManager
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.widget.Toast
@@ -12,6 +15,10 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.compose.NavHost
@@ -31,6 +38,15 @@ class MainActivity : ComponentActivity() {
     private lateinit var preferencesManager: com.mobileclaw.agent.data.PreferencesManager
     private lateinit var aiClient: OpenRouterClient
     private lateinit var orchestrator: AgentOrchestrator
+    private lateinit var updateChecker: UpdateChecker
+
+    // Broadcast receiver for the overlay STOP button
+    private val stopReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            orchestrator.stopTask()
+            stopOverlayService()
+        }
+    }
 
     private val mediaProjectionLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -90,6 +106,15 @@ class MainActivity : ComponentActivity() {
         preferencesManager = PreferencesManager(this)
         aiClient = OpenRouterClient("") // API key set later from prefs
         orchestrator = AgentOrchestrator(aiClient)
+        updateChecker = UpdateChecker(this)
+
+        // Register stop broadcast receiver
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(stopReceiver, IntentFilter("com.mobileclaw.agent.STOP_AGENT"),
+                Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            registerReceiver(stopReceiver, IntentFilter("com.mobileclaw.agent.STOP_AGENT"))
+        }
 
         // Load saved settings
         lifecycleScope.launch {
@@ -133,6 +158,47 @@ class MainActivity : ComponentActivity() {
                     preferencesManager.captureInterval.collect { captureInterval = it }
                 }
 
+                // OTA Update check
+                var showUpdateDialog by remember { mutableStateOf(false) }
+                var updateInfo by remember { mutableStateOf<UpdateChecker.UpdateInfo?>(null) }
+
+                LaunchedEffect(Unit) {
+                    val info = updateChecker.checkForUpdate()
+                    if (info != null && info.isUpdateAvailable) {
+                        updateInfo = info
+                        showUpdateDialog = true
+                    }
+                }
+
+                // Update dialog
+                if (showUpdateDialog && updateInfo != null) {
+                    AlertDialog(
+                        onDismissRequest = { showUpdateDialog = false },
+                        title = { Text("Update Available! 🎉") },
+                        text = {
+                            Column {
+                                Text("Version ${updateInfo!!.version} is available.")
+                                Spacer(Modifier.height(8.dp))
+                                Text(updateInfo!!.releaseNotes,
+                                    style = MaterialTheme.typography.bodySmall)
+                            }
+                        },
+                        confirmButton = {
+                            Button(onClick = {
+                                updateChecker.downloadUpdate(updateInfo!!.downloadUrl)
+                                showUpdateDialog = false
+                            }) {
+                                Text("Update Now")
+                            }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { showUpdateDialog = false }) {
+                                Text("Later")
+                            }
+                        }
+                    )
+                }
+
                 // Check service states periodically
                 LaunchedEffect(agentState) {
                     isAccessibilityEnabled = AgentAccessibilityService.isRunning()
@@ -153,9 +219,13 @@ class MainActivity : ComponentActivity() {
                             isAccessibilityEnabled = isAccessibilityEnabled,
                             isScreenCaptureActive = isScreenCaptureActive,
                             onSendTask = { task ->
+                                startOverlayService()
                                 orchestrator.startTask(task)
                             },
-                            onStopTask = { orchestrator.stopTask() },
+                            onStopTask = {
+                                orchestrator.stopTask()
+                                stopOverlayService()
+                            },
                             onPauseTask = { orchestrator.pauseTask() },
                             onResumeTask = { orchestrator.resumeTask() },
                             onClearChat = { orchestrator.clearChat() },
@@ -219,8 +289,22 @@ class MainActivity : ComponentActivity() {
         ).show()
     }
 
+    private fun startOverlayService() {
+        if (Settings.canDrawOverlays(this)) {
+            val intent = Intent(this, FloatingOverlayService::class.java)
+            startService(intent)
+        }
+    }
+
+    private fun stopOverlayService() {
+        val intent = Intent(this, FloatingOverlayService::class.java)
+        stopService(intent)
+    }
+
     override fun onDestroy() {
+        try { unregisterReceiver(stopReceiver) } catch (_: Exception) {}
         orchestrator.destroy()
+        stopOverlayService()
         super.onDestroy()
     }
 }

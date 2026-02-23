@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.asStateFlow
 /**
  * The brain of the agent.
  * Runs the Observe -> Think -> Act loop.
+ * Integrates with FloatingOverlayService for live status indicators.
  */
 class AgentOrchestrator(
     private val aiClient: OpenRouterClient
@@ -30,6 +31,7 @@ class AgentOrchestrator(
     private val previousActions = mutableListOf<String>()
     private var agentJob: Job? = null
     private var captureIntervalMs: Long = 2000L
+    private var consecutiveFailedActions = 0
 
     fun setCaptureInterval(ms: Long) { captureIntervalMs = ms }
 
@@ -43,6 +45,7 @@ class AgentOrchestrator(
         }
 
         previousActions.clear()
+        consecutiveFailedActions = 0
 
         addMessage(ChatMessage(
             role = MessageRole.USER,
@@ -60,6 +63,8 @@ class AgentOrchestrator(
             stepCount = 0,
             status = AgentStatus.THINKING
         )
+
+        updateOverlay("Starting...", "🚀", 0xFF00BFFF.toInt())
 
         agentJob = scope.launch {
             runAgentLoop(taskDescription)
@@ -80,6 +85,7 @@ class AgentOrchestrator(
             role = MessageRole.SYSTEM,
             content = "⏹️ Agent stopped by user"
         ))
+        updateOverlay("Stopped", "⏹️", 0xFFFF3366.toInt())
     }
 
     /**
@@ -91,6 +97,7 @@ class AgentOrchestrator(
             role = MessageRole.SYSTEM,
             content = "⏸️ Agent paused"
         ))
+        updateOverlay("Paused", "⏸️", 0xFFFFAA00.toInt())
     }
 
     /**
@@ -103,6 +110,7 @@ class AgentOrchestrator(
                 role = MessageRole.SYSTEM,
                 content = "▶️ Agent resumed"
             ))
+            updateOverlay("Resumed", "▶️", 0xFF00BFFF.toInt())
         }
     }
 
@@ -122,6 +130,7 @@ class AgentOrchestrator(
                 stepCount = step,
                 status = AgentStatus.THINKING
             )
+            updateOverlay("Thinking", "🧠", 0xFF00BFFF.toInt())
 
             // == OBSERVE: Capture screen ==
             val captureService = ScreenCaptureService.instance
@@ -131,6 +140,7 @@ class AgentOrchestrator(
                     content = "❌ Screen capture not available. Please grant screen recording permission."
                 ))
                 _state.value = _state.value.copy(isRunning = false, status = AgentStatus.FAILED)
+                updateOverlay("Error", "❌", 0xFFFF3366.toInt())
                 return
             }
 
@@ -174,11 +184,15 @@ class AgentOrchestrator(
                     content = "❌ AI Error: $error"
                 ))
                 _state.value = _state.value.copy(isRunning = false, status = AgentStatus.FAILED)
+                updateOverlay("Error", "❌", 0xFFFF3366.toInt())
                 return
             }
 
             val response = result.getOrThrow()
             _state.value = _state.value.copy(lastThinking = response.thinking)
+
+            // Update overlay with AI's thinking
+            FloatingOverlayService.instance?.updateThinking(response.thinking)
 
             // Remove the "thinking" message and replace with actual response
             removeLastThinkingMessage()
@@ -188,6 +202,22 @@ class AgentOrchestrator(
                 content = "💭 ${response.thinking}\n\n🎯 Action: ${response.action.type} ${response.action.description}"
             ))
 
+            // == LOOP DETECTION: Check for repeated failures ==
+            if (response.confidence < 0.3f) {
+                consecutiveFailedActions++
+                if (consecutiveFailedActions >= 3) {
+                    addMessage(ChatMessage(
+                        role = MessageRole.SYSTEM,
+                        content = "🔄 Loop detected: Agent has low confidence for 3 consecutive actions. Stopping to save credits."
+                    ))
+                    _state.value = _state.value.copy(isRunning = false, status = AgentStatus.FAILED)
+                    updateOverlay("Loop Detected", "🔄", 0xFFFF3366.toInt())
+                    return
+                }
+            } else {
+                consecutiveFailedActions = 0
+            }
+
             // == CHECK TERMINAL CONDITIONS ==
             if (response.action.type == ActionType.TASK_COMPLETE) {
                 addMessage(ChatMessage(
@@ -195,6 +225,7 @@ class AgentOrchestrator(
                     content = "✅ Task completed successfully!"
                 ))
                 _state.value = _state.value.copy(isRunning = false, status = AgentStatus.COMPLETED)
+                updateOverlay("Done!", "✅", 0xFF00FF00.toInt())
                 return
             }
 
@@ -204,11 +235,13 @@ class AgentOrchestrator(
                     content = "❌ Task failed: ${response.action.description}"
                 ))
                 _state.value = _state.value.copy(isRunning = false, status = AgentStatus.FAILED)
+                updateOverlay("Failed", "❌", 0xFFFF3366.toInt())
                 return
             }
 
             // == ACT: Execute the action ==
             _state.value = _state.value.copy(status = AgentStatus.ACTING)
+            updateOverlay("Acting", "⚡", 0xFF00FF88.toInt())
 
             val accessibilityService = AgentAccessibilityService.instance
             if (accessibilityService == null) {
@@ -217,6 +250,7 @@ class AgentOrchestrator(
                     content = "❌ Accessibility Service not enabled. Please enable it in Settings."
                 ))
                 _state.value = _state.value.copy(isRunning = false, status = AgentStatus.FAILED)
+                updateOverlay("Error", "❌", 0xFFFF3366.toInt())
                 return
             }
 
@@ -231,10 +265,23 @@ class AgentOrchestrator(
             )
 
             if (!actionSuccess) {
+                consecutiveFailedActions++
                 addMessage(ChatMessage(
                     role = MessageRole.SYSTEM,
                     content = "⚠️ Action failed: ${response.action.description}"
                 ))
+
+                if (consecutiveFailedActions >= 3) {
+                    addMessage(ChatMessage(
+                        role = MessageRole.SYSTEM,
+                        content = "🛑 3 consecutive failed actions. Stopping agent to prevent credit waste."
+                    ))
+                    _state.value = _state.value.copy(isRunning = false, status = AgentStatus.FAILED)
+                    updateOverlay("Failed", "🛑", 0xFFFF3366.toInt())
+                    return
+                }
+            } else {
+                consecutiveFailedActions = 0
             }
         }
 
@@ -244,6 +291,11 @@ class AgentOrchestrator(
             content = "⚠️ Maximum steps ($maxSteps) reached. Task stopped."
         ))
         _state.value = _state.value.copy(isRunning = false, status = AgentStatus.FAILED)
+        updateOverlay("Max Steps", "⚠️", 0xFFFFAA00.toInt())
+    }
+
+    private fun updateOverlay(status: String, emoji: String, color: Int) {
+        FloatingOverlayService.instance?.updateStatus(status, emoji, color)
     }
 
     private fun addMessage(message: ChatMessage) {
@@ -260,6 +312,7 @@ class AgentOrchestrator(
     fun clearChat() {
         _chatMessages.value = emptyList()
         previousActions.clear()
+        consecutiveFailedActions = 0
     }
 
     fun destroy() {
