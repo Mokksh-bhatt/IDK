@@ -25,9 +25,12 @@ class AgentAccessibilityService : AccessibilityService() {
         fun isRunning(): Boolean = instance != null
     }
 
+    var boundingBoxManager: BoundingBoxOverlayManager? = null
+
     override fun onServiceConnected() {
         super.onServiceConnected()
         instance = this
+        boundingBoxManager = BoundingBoxOverlayManager(this)
         Log.i(TAG, "Accessibility Service connected")
     }
 
@@ -60,6 +63,11 @@ class AgentAccessibilityService : AccessibilityService() {
                 val nodeText = action.text ?: return false
                 Log.d(TAG, "TAP_NODE: $nodeText")
                 performTapNode(nodeText)
+            }
+            ActionType.TAP_NODE_ID -> {
+                val nodeId = action.nodeId ?: return false
+                Log.d(TAG, "TAP_NODE_ID: $nodeId")
+                performTapNodeId(nodeId)
             }
             ActionType.LONG_PRESS -> {
                 val x = action.x ?: return false
@@ -272,14 +280,24 @@ class AgentAccessibilityService : AccessibilityService() {
         }
     }
 
-    // ===== SEMANTIC UI TREE =====
+    // ===== SEMANTIC UI TREE & OVERLAY =====
+
+    private var nextNodeId = 1
+    val interactiveNodes = mutableMapOf<Int, AccessibilityNodeInfo>()
+    val interactiveNodeBounds = mutableMapOf<Int, Rect>()
 
     /**
      * Extracts structured info about all visible UI elements from the
-     * live Android accessibility tree. Returns a compact text description
-     * the AI can use to identify elements and their exact screen bounds.
+     * live Android accessibility tree. Returns a compact text description.
+     * Also populates [interactiveNodes] and [interactiveNodeBounds] for the BoundingBox overlay.
      */
     fun getScreenUiTree(): String {
+        // Cleanup old nodes
+        interactiveNodes.values.forEach { try { it.recycle() } catch (e: Exception) {} }
+        interactiveNodes.clear()
+        interactiveNodeBounds.clear()
+        nextNodeId = 1
+
         val root = rootInActiveWindow ?: return ""
         val sb = StringBuilder()
         try {
@@ -289,13 +307,12 @@ class AgentAccessibilityService : AccessibilityService() {
         } finally {
             root.recycle()
         }
-        // Hard cap to prevent token explosion
         val result = sb.toString()
         return if (result.length > 3000) result.take(3000) + "\n[truncated]" else result
     }
 
     private fun extractNodes(node: AccessibilityNodeInfo, sb: StringBuilder, depth: Int) {
-        if (depth > 10 || sb.length > 3000) return
+        if (depth > 12 || sb.length > 3000) return
 
         val text = node.text?.toString()?.take(30) ?: ""
         val desc = node.contentDescription?.toString()?.take(30) ?: ""
@@ -305,13 +322,26 @@ class AgentAccessibilityService : AccessibilityService() {
         val hasLabel = text.isNotEmpty() || desc.isNotEmpty()
         val isInteractive = isClickable || isEditable
 
-        // Only emit nodes that are BOTH labeled AND interactive (saves huge token count)
-        if (hasLabel && isInteractive) {
+        // Even if an interactive node does NOT have a label, we want to extract it
+        // so we can draw a numbered bounding box over it.
+        if (isInteractive) {
             val bounds = Rect()
             node.getBoundsInScreen(bounds)
-            val label = if (text.isNotEmpty()) text else desc
-            val flag = if (isEditable) "edit" else "btn"
-            sb.appendLine("[$flag] \"$label\" [${bounds.left},${bounds.top},${bounds.right},${bounds.bottom}]")
+            
+            // Filter out tiny or invisible nodes
+            if (bounds.width() > 10 && bounds.height() > 10 && bounds.top >= 0) {
+                val id = nextNodeId++
+                interactiveNodes[id] = AccessibilityNodeInfo.obtain(node)
+                interactiveNodeBounds[id] = bounds
+
+                val label = if (text.isNotEmpty()) text else desc
+                val flag = if (isEditable) "edit" else "btn"
+                
+                // Only put it in the text UI tree if it has a label, to save tokens.
+                // Or we can include all so the AI knows what the IDs correspond to.
+                val safeLabel = if (label.isNotEmpty()) "\"$label\"" else "\"unlabeled\""
+                sb.appendLine("[$id] $flag $safeLabel [${bounds.left},${bounds.top},${bounds.right},${bounds.bottom}]")
+            }
         }
 
         for (i in 0 until node.childCount) {
@@ -368,6 +398,51 @@ class AgentAccessibilityService : AccessibilityService() {
             return false
         } finally {
             root.recycle()
+        }
+    }
+
+    /**
+     * Click a node by its cached integer ID assigned during getScreenUiTree().
+     */
+    private suspend fun performTapNodeId(nodeId: Int): Boolean {
+        val target = interactiveNodes[nodeId]
+        if (target == null) {
+            Log.w(TAG, "TAP_NODE_ID: could not find node with id $nodeId")
+            return false
+        }
+
+        try {
+            // Try native click first
+            if (target.isClickable) {
+                val clicked = target.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                if (clicked) return true
+            }
+
+            // Walk up the tree to find a clickable parent
+            var parent = target.parent
+            while (parent != null) {
+                if (parent.isClickable) {
+                    val clicked = parent.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                    parent.recycle()
+                    if (clicked) return true
+                }
+                val grandparent = parent.parent
+                parent.recycle()
+                parent = grandparent
+            }
+
+            // Last resort: tap the center of the stored bounds
+            val bounds = interactiveNodeBounds[nodeId]
+            if (bounds != null) {
+                val cx = (bounds.left + bounds.right) / 2f
+                val cy = (bounds.top + bounds.bottom) / 2f
+                Log.d(TAG, "TAP_NODE_ID fallback to gesture at ($cx, $cy)")
+                return performTap(cx, cy)
+            }
+            return false
+        } catch (e: Exception) {
+            Log.e(TAG, "Error tapping node ID: $nodeId", e)
+            return false
         }
     }
 

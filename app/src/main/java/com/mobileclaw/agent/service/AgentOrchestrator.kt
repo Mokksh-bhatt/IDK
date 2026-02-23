@@ -147,26 +147,32 @@ class AgentOrchestrator(
             // Small delay before capture to let any animation settle
             delay(captureIntervalMs)
 
-            val screenshot = captureService.captureScreen()
-            if (screenshot == null) {
-                addMessage(ChatMessage(
-                    role = MessageRole.SYSTEM,
-                    content = "⚠️ Failed to capture screen, retrying..."
-                ))
-                delay(1000)
-                continue
-            }
-
-            val screenWidth = captureService.screenWidth
-            val screenHeight = captureService.screenHeight
-
             // == EXTRACT UI TREE for semantic navigation ==
+            // Extract before capture so we can draw the bounding boxes
             val uiTree = try {
                 AgentAccessibilityService.instance?.getScreenUiTree() ?: ""
             } catch (e: Exception) {
                 Log.w(TAG, "Failed to get UI tree", e)
                 ""
             }
+
+            // == SHOW BOUNDING BOXES ==
+            val boundingBoxManager = AgentAccessibilityService.instance?.boundingBoxManager
+            val boxes = AgentAccessibilityService.instance?.interactiveNodeBounds ?: emptyMap()
+            if (boxes.isNotEmpty() && boundingBoxManager != null) {
+                boundingBoxManager.showBoxes(boxes)
+                // Wait for the UI to physically draw the overlay frames
+                delay(200)
+            }
+
+            val screenshot = captureService.captureScreen()
+
+            // == HIDE BOUNDING BOXES INSTANTLY ==
+            if (boxes.isNotEmpty() && boundingBoxManager != null) {
+                boundingBoxManager.hideBoxes()
+            }
+
+            if (screenshot == null) {
 
             // == THINK: Send to AI ==
             addMessage(ChatMessage(

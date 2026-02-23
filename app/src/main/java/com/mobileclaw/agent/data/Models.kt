@@ -11,6 +11,7 @@ data class AgentAction(
     val x: Int? = null,
     val y: Int? = null,
     val text: String? = null,
+    val nodeId: Int? = null,
     val description: String = "",
     val scrollDirection: String? = null, // "up", "down", "left", "right"
     val swipeDuration: Long = 300L
@@ -20,6 +21,7 @@ data class AgentAction(
 enum class ActionType {
     TAP,
     TAP_NODE,
+    TAP_NODE_ID,
     LONG_PRESS,
     TYPE_TEXT,
     SCROLL,
