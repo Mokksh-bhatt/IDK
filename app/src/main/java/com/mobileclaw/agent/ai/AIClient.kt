@@ -101,7 +101,7 @@ Respond ONLY with JSON: {"thinking":"...","action":{"type":"TAP_NODE_ID","nodeId
                 Provider.OPENAI -> listOf("gpt-4o-mini", "gpt-4o")
             }
 
-            var lastError: Exception? = null
+            var successfulResponse: AgentResponse? = null
 
             for (model in modelsToTry) {
                 try {
@@ -125,7 +125,10 @@ Respond ONLY with JSON: {"thinking":"...","action":{"type":"TAP_NODE_ID","nodeId
                         Provider.GEMINI -> parseGeminiResponse(responseBody)
                         Provider.OPENROUTER, Provider.OPENAI -> parseOpenAiCompatibleResponse(responseBody, providerName)
                     }
-                    return@withContext Result.success(agentResponse)
+                    
+                    // IF we reach here without exceptions thrown by parsing, we found a working model!
+                    successfulResponse = agentResponse
+                    break 
 
                 } catch (e: Exception) {
                     Log.w(TAG, "Fallback triggered: ${e.message}")
@@ -133,7 +136,11 @@ Respond ONLY with JSON: {"thinking":"...","action":{"type":"TAP_NODE_ID","nodeId
                 }
             }
 
-            return@withContext Result.failure(lastError ?: Exception("All fallback models failed"))
+            if (successfulResponse != null) {
+                return@withContext Result.success(successfulResponse)
+            } else {
+                return@withContext Result.failure(lastError ?: Exception("All fallback models failed. Check your API key or network connection."))
+            }
 
         } catch (e: Exception) {
             Log.e(TAG, "Error getting next action", e)
@@ -246,7 +253,8 @@ Respond ONLY with JSON: {"thinking":"...","action":{"type":"TAP_NODE_ID","nodeId
         return Request.Builder()
             .url(url)
             .addHeader("Authorization", "Bearer $apiKey")
-            .addHeader("HTTP-Referer", "https://github.com/MobileClaw")
+            // Removing HTTP-Referer entirely because OpenRouter / OpenAI aggressively flags
+            // keys as "leaked" if they originate from github.com URLs.
             .addHeader("X-Title", "MobileClaw Agent")
             .post(requestBody.toString().toRequestBody("application/json".toMediaType()))
             .build()
