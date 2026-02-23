@@ -95,27 +95,45 @@ Respond ONLY with JSON: {"thinking":"...","action":{"type":"TAP_NODE","text":"Se
 
             val userPromptText = "Task: $taskDescription\n${screenWidth}x${screenHeight}$historyContext$uiTreeSection\nJSON only."
 
-            val (request, providerName) = when (provider) {
-                Provider.GEMINI -> buildGeminiRequest(base64Image, userPromptText, "gemini-1.5-flash") to "Gemini"
-                Provider.OPENROUTER -> buildOpenAiCompatibleRequest(base64Image, userPromptText, "google/gemini-1.5-flash", OPENROUTER_URL) to "OpenRouter"
-                Provider.OPENAI -> buildOpenAiCompatibleRequest(base64Image, userPromptText, "gpt-4o-mini", OPENAI_URL) to "OpenAI"
+            val modelsToTry = when (provider) {
+                Provider.GEMINI -> listOf("gemini-1.5-flash", "gemini-1.5-pro", "gemini-2.0-flash")
+                Provider.OPENROUTER -> listOf("google/gemini-1.5-flash", "google/gemini-1.5-pro", "openai/gpt-4o-mini")
+                Provider.OPENAI -> listOf("gpt-4o-mini", "gpt-4o")
             }
 
-            Log.d(TAG, "Using provider: $providerName")
+            var lastError: Exception? = null
 
-            val response = client.newCall(request).execute()
-            val responseBody = response.body?.string() ?: throw Exception("Empty response from $providerName")
+            for (model in modelsToTry) {
+                try {
+                    val (request, providerName) = when (provider) {
+                        Provider.GEMINI -> buildGeminiRequest(base64Image, userPromptText, model) to "Gemini"
+                        Provider.OPENROUTER -> buildOpenAiCompatibleRequest(base64Image, userPromptText, model, OPENROUTER_URL) to "OpenRouter"
+                        Provider.OPENAI -> buildOpenAiCompatibleRequest(base64Image, userPromptText, model, OPENAI_URL) to "OpenAI"
+                    }
 
-            if (!response.isSuccessful) {
-                Log.e(TAG, "API Error: $responseBody")
-                throw Exception("$providerName error (${response.code}): ${extractErrorMessage(responseBody)}")
+                    Log.d(TAG, "Trying model: $model via $providerName")
+
+                    val response = client.newCall(request).execute()
+                    val responseBody = response.body?.string() ?: throw Exception("Empty response from $providerName")
+
+                    if (!response.isSuccessful) {
+                        Log.w(TAG, "Model $model failed (${response.code}): $responseBody")
+                        throw Exception("$providerName error (${response.code}): ${extractErrorMessage(responseBody)}")
+                    }
+
+                    val agentResponse = when (provider) {
+                        Provider.GEMINI -> parseGeminiResponse(responseBody)
+                        Provider.OPENROUTER, Provider.OPENAI -> parseOpenAiCompatibleResponse(responseBody, providerName)
+                    }
+                    return@withContext Result.success(agentResponse)
+
+                } catch (e: Exception) {
+                    Log.w(TAG, "Fallback triggered: ${e.message}")
+                    lastError = e
+                }
             }
 
-            val agentResponse = when (provider) {
-                Provider.GEMINI -> parseGeminiResponse(responseBody)
-                Provider.OPENROUTER, Provider.OPENAI -> parseOpenAiCompatibleResponse(responseBody, providerName)
-            }
-            Result.success(agentResponse)
+            return@withContext Result.failure(lastError ?: Exception("All fallback models failed"))
 
         } catch (e: Exception) {
             Log.e(TAG, "Error getting next action", e)
