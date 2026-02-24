@@ -310,7 +310,8 @@ Respond ONLY with JSON: {"thinking":"...","action":{"type":"...","nodeId":5,"tex
     // ===== SHARED UTILS =====
 
     private fun bitmapToBase64(bitmap: Bitmap): String {
-        val maxDim = 1024
+        // Keep resolution high so the AI can read text and see bounding box numbers
+        val maxDim = 1920
         val scale = minOf(maxDim.toFloat() / bitmap.width, maxDim.toFloat() / bitmap.height, 1f)
         val scaled = if (scale < 1f) {
             Bitmap.createScaledBitmap(
@@ -322,7 +323,7 @@ Respond ONLY with JSON: {"thinking":"...","action":{"type":"...","nodeId":5,"tex
         } else bitmap
 
         val stream = ByteArrayOutputStream()
-        scaled.compress(Bitmap.CompressFormat.JPEG, 80, stream)
+        scaled.compress(Bitmap.CompressFormat.JPEG, 95, stream)
         return Base64.encodeToString(stream.toByteArray(), Base64.NO_WRAP)
     }
 
@@ -349,6 +350,7 @@ Respond ONLY with JSON: {"thinking":"...","action":{"type":"...","nodeId":5,"tex
             x = actionObj["x"]?.jsonPrimitive?.intOrNull,
             y = actionObj["y"]?.jsonPrimitive?.intOrNull,
             text = actionObj["text"]?.jsonPrimitive?.contentOrNull,
+            nodeId = actionObj["nodeId"]?.jsonPrimitive?.intOrNull,
             description = actionObj["description"]?.jsonPrimitive?.contentOrNull ?: "",
             scrollDirection = actionObj["scrollDirection"]?.jsonPrimitive?.contentOrNull,
         )
