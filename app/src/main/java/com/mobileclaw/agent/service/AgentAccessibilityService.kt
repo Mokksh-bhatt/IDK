@@ -319,9 +319,11 @@ class AgentAccessibilityService : AccessibilityService() {
         val desc = node.contentDescription?.toString()?.take(30) ?: ""
         val isClickable = node.isClickable
         val isEditable = node.isEditable
+        val isLongClickable = node.isLongClickable
+        val hasClickAction = node.actionList?.contains(AccessibilityNodeInfo.AccessibilityAction.ACTION_CLICK) == true
 
         val hasLabel = text.isNotEmpty() || desc.isNotEmpty()
-        val isInteractive = isClickable || isEditable
+        val isInteractive = isClickable || isEditable || isLongClickable || hasClickAction
 
         // Even if an interactive node does NOT have a label, we want to extract it
         // so we can draw a numbered bounding box over it.

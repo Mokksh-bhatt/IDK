@@ -75,6 +75,7 @@ Rules:
 - ALWAYS prefer TAP_NODE_ID. 
 - DO NOT guess or hallucinate X,Y coordinates. Look at the numbers drawn on the screen!
 - If you need to click 'Play', find the number overlaid on the Play button and output that number.
+- If the screen is still loading or you see NO yellow boxes, output the WAIT action so the app can finish loading.
 - Respond ONLY with valid JSON. Max 1 sentence thinking.
 
 Respond ONLY with JSON: {"thinking":"...","action":{"type":"TAP_NODE_ID","nodeId":5,"description":"..."},"confidence":0.9}
