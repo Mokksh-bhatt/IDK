@@ -249,6 +249,7 @@ class AgentAccessibilityService : AccessibilityService() {
             "messages" to "com.google.android.apps.messaging",
             "phone" to "com.google.android.dialer",
             "spotify" to "com.spotify.music",
+            "amazon music" to "com.amazon.mp3",
             "twitter" to "com.twitter.android",
             "x" to "com.twitter.android",
             "telegram" to "org.telegram.messenger",
@@ -342,7 +343,7 @@ class AgentAccessibilityService : AccessibilityService() {
                 val safeLabel = if (label.isNotEmpty()) "\"$label\"" else "\"unlabeled\""
                 sb.appendLine("[$id] $flag $safeLabel [${bounds.left},${bounds.top},${bounds.right},${bounds.bottom}]")
             }
-        }
+        } // End of isInteractive check
 
         for (i in 0 until node.childCount) {
             val child = node.getChild(i) ?: continue
