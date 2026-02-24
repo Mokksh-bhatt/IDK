@@ -89,7 +89,7 @@ CRITICAL BEHAVIOR RULES:
 - If an action fails, try a DIFFERENT approach. Never repeat the same failed action.
 - 1 sentence thinking max.
 
-JSON only: {"thinking":"...","action":{"type":"...","nodeId":5,"text":"...","scrollDirection":"...","description":"..."},"confidence":0.9}
+JSON only: {"action":{"type":"...","nodeId":5,"text":"...","scrollDirection":"...","description":"..."},"thinking":"...","confidence":0.9}
 """.trimIndent()
 
     suspend fun getNextAction(
@@ -207,7 +207,7 @@ JSON only: {"thinking":"...","action":{"type":"...","nodeId":5,"text":"...","scr
             put("generationConfig", buildJsonObject {
                 put("temperature", 0.2)
                 put("topP", 0.95)
-                put("maxOutputTokens", 200)
+                put("maxOutputTokens", 300)
                 put("responseMimeType", "application/json")
             })
         }
@@ -276,7 +276,7 @@ JSON only: {"thinking":"...","action":{"type":"...","nodeId":5,"text":"...","scr
                 }
             }
             put("temperature", 0.2)
-            put("max_tokens", 200)
+            put("max_tokens", 300)
         }
 
         return Request.Builder()
@@ -334,38 +334,54 @@ JSON only: {"thinking":"...","action":{"type":"...","nodeId":5,"text":"...","scr
     }
 
     private fun parseManually(text: String): AgentResponse {
-        val jsonElement = json.parseToJsonElement(text).jsonObject
+        try {
+            val jsonElement = json.parseToJsonElement(text).jsonObject
 
-        val thinking = jsonElement["thinking"]?.jsonPrimitive?.contentOrNull ?: ""
-        val confidence = jsonElement["confidence"]?.jsonPrimitive?.floatOrNull ?: 0.5f
+            val thinking = jsonElement["thinking"]?.jsonPrimitive?.contentOrNull ?: ""
+            val confidence = jsonElement["confidence"]?.jsonPrimitive?.floatOrNull ?: 0.5f
 
-        val actionObj = jsonElement["action"]?.jsonObject
-            ?: throw Exception("No action object found in response")
+            val actionObj = jsonElement["action"]?.jsonObject ?: throw Exception("No action object")
 
-        val typeStr = actionObj["action"]?.jsonPrimitive?.content ?: actionObj["type"]?.jsonPrimitive?.content
-            ?: throw Exception("No action type found")
+            val actionTypeStr = actionObj["type"]?.jsonPrimitive?.contentOrNull ?: "WAIT"
+            val actionType = try {
+                ActionType.valueOf(actionTypeStr)
+            } catch (e: Exception) {
+                ActionType.WAIT
+            }
 
-        val actionType = try {
-            ActionType.valueOf(typeStr)
+            val action = AgentAction(
+                type = actionType,
+                x = actionObj["x"]?.jsonPrimitive?.intOrNull,
+                y = actionObj["y"]?.jsonPrimitive?.intOrNull,
+                text = actionObj["text"]?.jsonPrimitive?.contentOrNull,
+                nodeId = actionObj["nodeId"]?.jsonPrimitive?.intOrNull,
+                description = actionObj["description"]?.jsonPrimitive?.contentOrNull ?: "",
+                scrollDirection = actionObj["scrollDirection"]?.jsonPrimitive?.contentOrNull,
+            )
+
+            return AgentResponse(thinking, action, confidence)
         } catch (e: Exception) {
-            ActionType.WAIT
+            Log.e(TAG, "Manual JSON parse also failed, attempting regex fallback: ${e.message}")
+            
+            // Regex fallback for completely broken/truncated JSON
+            val typeStr = Regex("\"type\"\\s*:\\s*\"([^\"]+)\"").find(text)?.groupValues?.get(1) ?: "WAIT"
+            val actionType = try { ActionType.valueOf(typeStr) } catch(ex: Exception) { ActionType.WAIT }
+            val description = Regex("\"description\"\\s*:\\s*\"([^\"]+)\"").find(text)?.groupValues?.get(1) ?: "Fallback extracted action"
+            val textVal = Regex("\"text\"\\s*:\\s*\"([^\"]+)\"").find(text)?.groupValues?.get(1)
+            val nodeId = Regex("\"nodeId\"\\s*:\\s*(\\d+)").find(text)?.groupValues?.get(1)?.toIntOrNull()
+            val scrollDir = Regex("\"scrollDirection\"\\s*:\\s*\"([^\"]+)\"").find(text)?.groupValues?.get(1)
+            val thinking = Regex("\"thinking\"\\s*:\\s*\"([^\"]+)\"").find(text)?.groupValues?.get(1) ?: "Extracted via regex due to malformed JSON"
+            
+            val action = AgentAction(
+                type = actionType,
+                text = textVal,
+                nodeId = nodeId,
+                scrollDirection = scrollDir,
+                description = description
+            )
+            
+            return AgentResponse(thinking, action, 0.5f)
         }
-
-        val action = AgentAction(
-            type = actionType,
-            x = actionObj["x"]?.jsonPrimitive?.intOrNull,
-            y = actionObj["y"]?.jsonPrimitive?.intOrNull,
-            text = actionObj["text"]?.jsonPrimitive?.contentOrNull,
-            nodeId = actionObj["nodeId"]?.jsonPrimitive?.intOrNull,
-            description = actionObj["description"]?.jsonPrimitive?.contentOrNull ?: "",
-            scrollDirection = actionObj["scrollDirection"]?.jsonPrimitive?.contentOrNull,
-        )
-
-        return AgentResponse(
-            thinking = thinking,
-            action = action,
-            confidence = confidence
-        )
     }
 
     private fun extractErrorMessage(body: String): String {
