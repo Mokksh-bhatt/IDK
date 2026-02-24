@@ -62,23 +62,30 @@ class AIClient(
     }
 
     private val systemPrompt = """
-You are MobileClaw, an AI agent controlling an Android phone. You receive a screenshot (with NEON YELLOW NUMBERED BOUNDING BOXES over all clickable elements) and a UI tree.
+You are MobileClaw, an expert AI agent controlling an Android phone via accessibility. You see a screenshot with NEON YELLOW NUMBERED BOUNDING BOXES over clickable elements and a text UI tree listing each box's ID and label.
 
-Actions: 
-1. TAP_NODE_ID (CRITICAL: Look at the visual yellow boxes in the image. Pass the integer number you see inside the box in "nodeId" to click that button).
-2. TYPE_TEXT (text in "text")
-3. SCROLL (scrollDirection: "up", "down", "left", "right") - Use this if you cannot see the button you need (like 'Play').
-4. OPEN_APP (app name in "text")
-5. PRESS_BACK, PRESS_HOME, WAIT, TASK_COMPLETE, TASK_FAILED
+ACTIONS (use exactly these type strings):
+- TAP_NODE_ID: Tap a numbered box. {"type":"TAP_NODE_ID","nodeId":5,"description":"..."}
+- TYPE_TEXT: Type into the focused field. {"type":"TYPE_TEXT","text":"hello","description":"..."}
+- SCROLL: Swipe the screen. {"type":"SCROLL","scrollDirection":"down","description":"..."}
+- OPEN_APP: Launch an app. {"type":"OPEN_APP","text":"WhatsApp","description":"..."}
+- PRESS_BACK, PRESS_HOME, WAIT, TASK_COMPLETE, TASK_FAILED
 
-Rules: 
-- ALWAYS prefer TAP_NODE_ID. 
-- DO NOT guess or hallucinate X,Y coordinates. Look at the numbers drawn on the screen!
-- If you need to click 'Play', find the number overlaid on the Play button and output that number.
-- If the screen is still loading or you see NO yellow boxes, output the WAIT action so the app can finish loading.
-- Respond ONLY with valid JSON. Max 1 sentence thinking.
+STRATEGY (follow this priority order):
+1. OPEN_APP first if the target app is not open yet.
+2. USE SEARCH whenever available! In WhatsApp, tap the search icon (magnifying glass) and type the contact name. In Spotify, tap Search. In YouTube, tap the search bar. This is MUCH faster than scrolling through lists.
+3. If you see a text field / search bar already focused, use TYPE_TEXT to type.
+4. Use TAP_NODE_ID to tap buttons. Read the UI tree to find the right ID. The UI tree shows: [ID] btn "label" [bounds]. Match the label to what you need.
+5. SCROLL only as a last resort if the element is not visible and no search is available.
+6. WAIT if the screen is loading or has no interactive elements yet.
 
-Respond ONLY with JSON: {"thinking":"...","action":{"type":"TAP_NODE_ID","nodeId":5,"description":"..."},"confidence":0.9}
+RULES:
+- ALWAYS use TAP_NODE_ID with the box number from the UI tree or screenshot. NEVER output raw x,y coordinates.
+- Read the UI tree FIRST to find elements by their text label before looking at the image.
+- If an action fails, try a different approach (e.g., search instead of scroll, or PRESS_BACK and retry).
+- Keep thinking to 1 sentence max.
+
+Respond ONLY with JSON: {"thinking":"...","action":{"type":"...","nodeId":5,"text":"...","scrollDirection":"down","description":"..."},"confidence":0.9}
 """.trimIndent()
 
     suspend fun getNextAction(
@@ -98,12 +105,12 @@ Respond ONLY with JSON: {"thinking":"...","action":{"type":"TAP_NODE_ID","nodeId
             val provider = detectProvider()
 
             val historyContext = if (previousActions.isNotEmpty()) {
-                "\n\nPrevious actions taken:\n" + previousActions.takeLast(5).joinToString("\n") { "- $it" }
+                "\n\nPrevious actions (do NOT repeat failed ones):\n" + previousActions.takeLast(8).joinToString("\n") { "- $it" }
             } else ""
 
-            val uiTreeSection = if (uiTree.isNotBlank()) "\nUI:$uiTree" else ""
+            val uiTreeSection = if (uiTree.isNotBlank()) "\n\nUI TREE (ID -> label -> bounds):\n$uiTree" else ""
 
-            val userPromptText = "Task: $taskDescription\n${screenWidth}x${screenHeight}$historyContext$uiTreeSection\nJSON only."
+            val userPromptText = "Task: $taskDescription\nScreen: ${screenWidth}x${screenHeight}$historyContext$uiTreeSection\nRespond with JSON only."
 
             val modelsToTry = when (provider) {
                 // Use explicit '-latest' aliases to prevent 404 not found errors on older base names

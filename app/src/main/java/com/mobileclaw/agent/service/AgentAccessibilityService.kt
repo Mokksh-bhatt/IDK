@@ -164,21 +164,23 @@ class AgentAccessibilityService : AccessibilityService() {
     private suspend fun performScroll(direction: String, screenWidth: Int, screenHeight: Int): Boolean {
         val centerX = screenWidth / 2f
         val centerY = screenHeight / 2f
-        val distance = screenHeight / 3f
+        val distance = screenHeight / 2f  // Scroll half the screen for meaningful movement
 
-        val (startX, startY, endX, endY) = when (direction) {
-            "up" -> listOf(centerX, centerY + distance / 2, centerX, centerY - distance / 2)
-            "down" -> listOf(centerX, centerY - distance / 2, centerX, centerY + distance / 2)
+        // "scroll down" = see content below = finger swipes from bottom to top
+        // "scroll up" = see content above = finger swipes from top to bottom
+        val (startX, startY, endX, endY) = when (direction.lowercase().trim()) {
+            "down" -> listOf(centerX, centerY + distance / 2, centerX, centerY - distance / 2)
+            "up" -> listOf(centerX, centerY - distance / 2, centerX, centerY + distance / 2)
             "left" -> listOf(centerX + distance / 2, centerY, centerX - distance / 2, centerY)
             "right" -> listOf(centerX - distance / 2, centerY, centerX + distance / 2, centerY)
-            else -> listOf(centerX, centerY + distance / 2, centerX, centerY - distance / 2)
+            else -> listOf(centerX, centerY + distance / 2, centerX, centerY - distance / 2) // default = scroll down
         }
 
         val path = Path().apply {
             moveTo(startX, startY)
             lineTo(endX, endY)
         }
-        val stroke = GestureDescription.StrokeDescription(path, 0, 500)
+        val stroke = GestureDescription.StrokeDescription(path, 0, 400)
         val gesture = GestureDescription.Builder().addStroke(stroke).build()
         return dispatchGesture(gesture)
     }
@@ -311,11 +313,11 @@ class AgentAccessibilityService : AccessibilityService() {
             root.recycle()
         }
         val result = sb.toString()
-        return if (result.length > 3000) result.take(3000) + "\n[truncated]" else result
+        return if (result.length > 4000) result.take(4000) + "\n[truncated]" else result
     }
 
     private fun extractNodes(node: AccessibilityNodeInfo, sb: StringBuilder, depth: Int) {
-        if (depth > 12 || sb.length > 3000) return
+        if (depth > 15 || sb.length > 4000) return
 
         val text = node.text?.toString()?.take(30) ?: ""
         val desc = node.contentDescription?.toString()?.take(30) ?: ""
