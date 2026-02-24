@@ -62,30 +62,34 @@ class AIClient(
     }
 
     private val systemPrompt = """
-You are MobileClaw, an expert AI agent controlling an Android phone via accessibility. You see a screenshot with NEON YELLOW NUMBERED BOUNDING BOXES over clickable elements and a text UI tree listing each box's ID and label.
+You are MobileClaw, an AI agent controlling an Android phone. You receive:
+1. A SCREENSHOT with YELLOW NUMBERED BOXES over interactive elements
+2. A UI TREE listing each box ID + text label + bounds
 
-ACTIONS (use exactly these type strings):
-- TAP_NODE_ID: Tap a numbered box. {"type":"TAP_NODE_ID","nodeId":5,"description":"..."}
-- TYPE_TEXT: Type into the focused field. {"type":"TYPE_TEXT","text":"hello","description":"..."}
-- SCROLL: Swipe the screen. {"type":"SCROLL","scrollDirection":"down","description":"..."}
-- OPEN_APP: Launch an app. {"type":"OPEN_APP","text":"WhatsApp","description":"..."}
+ACTIONS:
+- TAP_NODE_ID: Tap box by ID. {"type":"TAP_NODE_ID","nodeId":5,"description":"tap search"}
+- TYPE_TEXT: Type text. {"type":"TYPE_TEXT","text":"Mom","description":"type contact name"}
+- SCROLL: {"type":"SCROLL","scrollDirection":"down","description":"scroll to see more"}
+- OPEN_APP: {"type":"OPEN_APP","text":"WhatsApp","description":"launch app"}
 - PRESS_BACK, PRESS_HOME, WAIT, TASK_COMPLETE, TASK_FAILED
 
-STRATEGY (follow this priority order):
-1. OPEN_APP first if the target app is not open yet.
-2. USE SEARCH whenever available! In WhatsApp, tap the search icon (magnifying glass) and type the contact name. In Spotify, tap Search. In YouTube, tap the search bar. This is MUCH faster than scrolling through lists.
-3. If you see a text field / search bar already focused, use TYPE_TEXT to type.
-4. Use TAP_NODE_ID to tap buttons. Read the UI tree to find the right ID. The UI tree shows: [ID] btn "label" [bounds]. Match the label to what you need.
-5. SCROLL only as a last resort if the element is not visible and no search is available.
-6. WAIT if the screen is loading or has no interactive elements yet.
+STRATEGY - take the SHORTEST path:
+1. OPEN_APP if the target app is not on screen.
+2. If the contact/item is ALREADY VISIBLE in the list, TAP it directly. Do NOT search if it's already on screen.
+3. If it's NOT visible, tap the search icon, TYPE_TEXT the name, then tap the result.
+4. SCROLL only if search is unavailable.
+5. WAIT if the screen is loading.
 
-RULES:
-- ALWAYS use TAP_NODE_ID with the box number from the UI tree or screenshot. NEVER output raw x,y coordinates.
-- Read the UI tree FIRST to find elements by their text label before looking at the image.
-- If an action fails, try a different approach (e.g., search instead of scroll, or PRESS_BACK and retry).
-- Keep thinking to 1 sentence max.
+CRITICAL BEHAVIOR RULES:
+- Read the UI TREE text labels FIRST. Match labels to the task before looking at the screenshot.
+- ALWAYS use TAP_NODE_ID. Never guess x,y coordinates.
+- MESSAGING: When told to "message" someone, open their chat and type the specified message. If no specific message is mentioned, type "Hi". If there's an existing conversation, just type in the text field at the bottom.
+- CALLS: When a call is active (ringing or connected), do NOT tap the end/red button. Just report TASK_COMPLETE. The user asked to MAKE the call, not end it.
+- Do NOT navigate to call tabs, profiles, or settings unless explicitly asked. Go directly to the chat or dial.
+- If an action fails, try a DIFFERENT approach. Never repeat the same failed action.
+- 1 sentence thinking max.
 
-Respond ONLY with JSON: {"thinking":"...","action":{"type":"...","nodeId":5,"text":"...","scrollDirection":"down","description":"..."},"confidence":0.9}
+JSON only: {"thinking":"...","action":{"type":"...","nodeId":5,"text":"...","scrollDirection":"...","description":"..."},"confidence":0.9}
 """.trimIndent()
 
     suspend fun getNextAction(
@@ -199,9 +203,9 @@ Respond ONLY with JSON: {"thinking":"...","action":{"type":"...","nodeId":5,"tex
                 }
             }
             put("generationConfig", buildJsonObject {
-                put("temperature", 0.1)
+                put("temperature", 0.2)
                 put("topP", 0.95)
-                put("maxOutputTokens", 512)
+                put("maxOutputTokens", 200)
                 put("responseMimeType", "application/json")
             })
         }
@@ -263,14 +267,14 @@ Respond ONLY with JSON: {"thinking":"...","action":{"type":"...","nodeId":5,"tex
                             put("type", "image_url")
                             put("image_url", buildJsonObject {
                                 put("url", "data:image/jpeg;base64,$base64Image")
-                                put("detail", "auto")
+                                put("detail", "low")
                             })
                         }
                     }
                 }
             }
-            put("temperature", 0.1)
-            put("max_tokens", 512)
+            put("temperature", 0.2)
+            put("max_tokens", 200)
         }
 
         return Request.Builder()
@@ -310,8 +314,8 @@ Respond ONLY with JSON: {"thinking":"...","action":{"type":"...","nodeId":5,"tex
     // ===== SHARED UTILS =====
 
     private fun bitmapToBase64(bitmap: Bitmap): String {
-        // Keep resolution high so the AI can read text and see bounding box numbers
-        val maxDim = 1920
+        // 1280px balances readability vs token cost (~3x cheaper than 1920)
+        val maxDim = 1280
         val scale = minOf(maxDim.toFloat() / bitmap.width, maxDim.toFloat() / bitmap.height, 1f)
         val scaled = if (scale < 1f) {
             Bitmap.createScaledBitmap(
@@ -323,7 +327,7 @@ Respond ONLY with JSON: {"thinking":"...","action":{"type":"...","nodeId":5,"tex
         } else bitmap
 
         val stream = ByteArrayOutputStream()
-        scaled.compress(Bitmap.CompressFormat.JPEG, 95, stream)
+        scaled.compress(Bitmap.CompressFormat.JPEG, 85, stream)
         return Base64.encodeToString(stream.toByteArray(), Base64.NO_WRAP)
     }
 
