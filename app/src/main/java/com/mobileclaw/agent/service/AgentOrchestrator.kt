@@ -148,7 +148,6 @@ class AgentOrchestrator(
             delay(captureIntervalMs)
 
             // == EXTRACT UI TREE for semantic navigation ==
-            // Extract before capture so we can draw the bounding boxes
             val uiTree = try {
                 AgentAccessibilityService.instance?.getScreenUiTree() ?: ""
             } catch (e: Exception) {
@@ -156,23 +155,10 @@ class AgentOrchestrator(
                 ""
             }
 
-            // == SHOW BOUNDING BOXES ==
-            val boundingBoxManager = AgentAccessibilityService.instance?.boundingBoxManager
-            val boxes = AgentAccessibilityService.instance?.interactiveNodeBounds ?: emptyMap()
-            if (boxes.isNotEmpty() && boundingBoxManager != null) {
-                boundingBoxManager.showBoxes(boxes)
-                // Wait for the UI to physically draw the overlay frames
-                delay(200)
-            }
+            // == CAPTURE SCREENSHOT (raw, without overlays) ==
+            val rawScreenshot = captureService.captureScreen()
 
-            val screenshot = captureService.captureScreen()
-
-            // == HIDE BOUNDING BOXES INSTANTLY ==
-            if (boxes.isNotEmpty() && boundingBoxManager != null) {
-                boundingBoxManager.hideBoxes()
-            }
-
-            if (screenshot == null) {
+            if (rawScreenshot == null) {
                 addMessage(ChatMessage(
                     role = MessageRole.SYSTEM,
                     content = "⚠️ Failed to capture screen, retrying..."
@@ -180,6 +166,13 @@ class AgentOrchestrator(
                 delay(1000)
                 continue
             }
+
+            // == DRAW BOUNDING BOXES DIRECTLY ONTO THE BITMAP ==
+            // MediaProjection does NOT capture window overlays, so we must
+            // bake the numbered boxes into the image the AI actually sees.
+            val boxes = AgentAccessibilityService.instance?.interactiveNodeBounds ?: emptyMap()
+            val screenshot = BoundingBoxOverlayManager.drawBoxesOnBitmap(rawScreenshot, boxes)
+            if (rawScreenshot !== screenshot) rawScreenshot.recycle()  // recycle original if a copy was made
 
             val screenWidth = captureService.screenWidth
             val screenHeight = captureService.screenHeight

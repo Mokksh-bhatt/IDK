@@ -63,26 +63,22 @@ class BoundingBoxOverlayManager(private val context: Context) {
 
     private inner class OverlayView(context: Context, val boxes: Map<Int, Rect>) : View(context) {
         
-        // Semi-transparent neon yellow for the box background
         private val boxPaint = Paint().apply {
             color = Color.parseColor("#44FFE600")
             style = Paint.Style.FILL
         }
         
-        // Bright solid yellow for the borders
         private val borderPaint = Paint().apply {
             color = Color.parseColor("#FFFFE600")
             style = Paint.Style.STROKE
             strokeWidth = 6f
         }
         
-        // Solid black background for the ID badge
         private val badgeBgPaint = Paint().apply {
             color = Color.BLACK
             style = Paint.Style.FILL
         }
         
-        // Solid yellow text for the ID
         private val textPaint = Paint().apply {
             color = Color.parseColor("#FFFFE600")
             textSize = 34f
@@ -93,19 +89,15 @@ class BoundingBoxOverlayManager(private val context: Context) {
 
         override fun onDraw(canvas: Canvas) {
             super.onDraw(canvas)
-            // Draw all boxes
             for ((id, rect) in boxes) {
-                // Draw box
                 canvas.drawRect(rect, boxPaint)
                 canvas.drawRect(rect, borderPaint)
                 
-                // Draw ID badge at top-left
                 val text = id.toString()
                 val textWidth = textPaint.measureText(text)
                 val fontMetrics = textPaint.fontMetrics
                 val textHeight = fontMetrics.descent - fontMetrics.ascent
                 
-                // Ensure badge fits within screen and provides padding
                 val padding = 6
                 val bgRect = Rect(
                     rect.left,
@@ -115,8 +107,6 @@ class BoundingBoxOverlayManager(private val context: Context) {
                 )
                 
                 canvas.drawRect(bgRect, badgeBgPaint)
-                
-                // Draw numeric text centered inside the badge
                 canvas.drawText(
                     text, 
                     rect.left + padding.toFloat(), 
@@ -124,6 +114,65 @@ class BoundingBoxOverlayManager(private val context: Context) {
                     textPaint
                 )
             }
+        }
+    }
+
+    companion object {
+        /**
+         * Draws numbered bounding boxes DIRECTLY onto a Bitmap.
+         * This is critical because MediaProjection does NOT capture window overlays,
+         * so the AI can only see boxes if they are baked into the screenshot itself.
+         */
+        fun drawBoxesOnBitmap(source: android.graphics.Bitmap, boxes: Map<Int, Rect>): android.graphics.Bitmap {
+            if (boxes.isEmpty()) return source
+
+            // Create a mutable copy to draw on
+            val mutable = source.copy(android.graphics.Bitmap.Config.ARGB_8888, true)
+            val canvas = Canvas(mutable)
+
+            val boxPaint = Paint().apply {
+                color = Color.parseColor("#44FFE600")
+                style = Paint.Style.FILL
+            }
+            val borderPaint = Paint().apply {
+                color = Color.parseColor("#FFFFE600")
+                style = Paint.Style.STROKE
+                strokeWidth = 5f
+            }
+            val badgeBgPaint = Paint().apply {
+                color = Color.BLACK
+                style = Paint.Style.FILL
+            }
+            val textPaint = Paint().apply {
+                color = Color.parseColor("#FFFFE600")
+                textSize = 32f
+                isAntiAlias = true
+                isFakeBoldText = true
+                textAlign = Paint.Align.LEFT
+            }
+
+            for ((id, rect) in boxes) {
+                // Draw semi-transparent fill and border
+                canvas.drawRect(rect, boxPaint)
+                canvas.drawRect(rect, borderPaint)
+
+                // Draw black badge with yellow number at top-left corner
+                val text = id.toString()
+                val tw = textPaint.measureText(text)
+                val fm = textPaint.fontMetrics
+                val th = fm.descent - fm.ascent
+                val pad = 5
+
+                val bgRect = Rect(
+                    rect.left, rect.top,
+                    (rect.left + tw + pad * 2).toInt(),
+                    (rect.top + th + pad).toInt()
+                )
+                canvas.drawRect(bgRect, badgeBgPaint)
+                canvas.drawText(text, rect.left + pad.toFloat(), rect.top - fm.ascent + (pad / 2f), textPaint)
+            }
+
+            return mutable
         }
     }
 }
