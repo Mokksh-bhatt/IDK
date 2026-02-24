@@ -126,7 +126,7 @@ JSON only: {"action":{"type":"...","nodeId":5,"text":"...","scrollDirection":"..
             }
 
             var successfulResponse: AgentResponse? = null
-            var lastError: Exception? = null
+            val fallbackErrors = mutableListOf<String>()
 
             for (model in modelsToTry) {
                 try {
@@ -157,18 +157,14 @@ JSON only: {"action":{"type":"...","nodeId":5,"text":"...","scrollDirection":"..
 
                 } catch (e: Exception) {
                     Log.w(TAG, "Fallback triggered for $model: ${e.message}")
-                    // Prioritize crucial errors (Quota/Rate Limit/Auth) over 404s
-                    val msg = e.message ?: ""
-                    if (lastError == null || msg.contains("429") || msg.contains("401") || msg.contains("403")) {
-                        lastError = e
-                    }
+                    fallbackErrors.add("[$model] ${e.message}")
                 }
             }
 
             if (successfulResponse != null) {
                 return@withContext Result.success(successfulResponse!!)
             } else {
-                return@withContext Result.failure(lastError ?: Exception("All fallback models failed. Check your API key or network connection."))
+                return@withContext Result.failure(Exception("All fallback models failed:\n" + fallbackErrors.joinToString("\n")))
             }
 
         } catch (e: Exception) {
