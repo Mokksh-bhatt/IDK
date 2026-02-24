@@ -96,12 +96,13 @@ Respond ONLY with JSON: {"thinking":"...","action":{"type":"TAP_NODE_ID","nodeId
             val userPromptText = "Task: $taskDescription\n${screenWidth}x${screenHeight}$historyContext$uiTreeSection\nJSON only."
 
             val modelsToTry = when (provider) {
-                Provider.GEMINI -> listOf("gemini-1.5-flash", "gemini-1.5-pro", "gemini-2.0-flash")
-                Provider.OPENROUTER -> listOf("google/gemini-1.5-flash", "google/gemini-1.5-pro", "openai/gpt-4o-mini")
+                Provider.GEMINI -> listOf("gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash", "gemini-3.0-flash", "gemini-1.5-flash")
+                Provider.OPENROUTER -> listOf("google/gemini-2.5-flash", "google/gemini-2.5-pro", "google/gemini-2.0-flash", "openai/gpt-4o-mini")
                 Provider.OPENAI -> listOf("gpt-4o-mini", "gpt-4o")
             }
 
             var successfulResponse: AgentResponse? = null
+            var lastError: Exception? = null
 
             for (model in modelsToTry) {
                 try {
@@ -137,7 +138,7 @@ Respond ONLY with JSON: {"thinking":"...","action":{"type":"TAP_NODE_ID","nodeId
             }
 
             if (successfulResponse != null) {
-                return@withContext Result.success(successfulResponse)
+                return@withContext Result.success(successfulResponse!!)
             } else {
                 return@withContext Result.failure(lastError ?: Exception("All fallback models failed. Check your API key or network connection."))
             }
