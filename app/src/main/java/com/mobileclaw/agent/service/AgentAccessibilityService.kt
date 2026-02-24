@@ -26,11 +26,13 @@ class AgentAccessibilityService : AccessibilityService() {
     }
 
     var boundingBoxManager: BoundingBoxOverlayManager? = null
+    var edgeGlowManager: EdgeGlowOverlayManager? = null
 
     override fun onServiceConnected() {
         super.onServiceConnected()
         instance = this
         boundingBoxManager = BoundingBoxOverlayManager(this)
+        edgeGlowManager = EdgeGlowOverlayManager(this)
         Log.i(TAG, "Accessibility Service connected")
     }
 

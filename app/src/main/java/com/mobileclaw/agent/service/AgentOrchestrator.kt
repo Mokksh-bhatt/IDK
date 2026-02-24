@@ -321,6 +321,13 @@ class AgentOrchestrator(
 
     private fun updateOverlay(status: String, emoji: String, color: Int) {
         FloatingOverlayService.instance?.updateStatus(status, emoji, color)
+        
+        // Show glowing screen edges when running, hide when stopped or paused
+        if (_state.value.isRunning && _state.value.status != AgentStatus.PAUSED) {
+            AgentAccessibilityService.instance?.edgeGlowManager?.showGlow(color)
+        } else {
+            AgentAccessibilityService.instance?.edgeGlowManager?.hideGlow()
+        }
     }
 
     private fun addMessage(message: ChatMessage) {
