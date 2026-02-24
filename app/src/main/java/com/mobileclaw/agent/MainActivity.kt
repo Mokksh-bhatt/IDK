@@ -107,7 +107,7 @@ class MainActivity : ComponentActivity() {
 
         preferencesManager = PreferencesManager(this)
         aiClient = AIClient("") // API key set later from prefs
-        orchestrator = AgentOrchestrator(aiClient)
+        orchestrator = AgentOrchestrator(this, aiClient)
         updateChecker = UpdateChecker(this)
 
         // Register stop broadcast receiver

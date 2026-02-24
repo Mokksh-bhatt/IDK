@@ -1,5 +1,6 @@
 package com.mobileclaw.agent.service
 
+import android.content.Context
 import android.util.Log
 import com.mobileclaw.agent.ai.AIClient
 import com.mobileclaw.agent.data.*
@@ -14,6 +15,7 @@ import kotlinx.coroutines.flow.asStateFlow
  * Integrates with FloatingOverlayService for live status indicators.
  */
 class AgentOrchestrator(
+    private val context: Context,
     private val aiClient: AIClient
 ) {
     companion object {
@@ -32,6 +34,7 @@ class AgentOrchestrator(
     private var agentJob: Job? = null
     private var captureIntervalMs: Long = 2000L
     private var consecutiveFailedActions = 0
+    private val memoryManager = UserMemoryManager(context)
 
     fun setCaptureInterval(ms: Long) { captureIntervalMs = ms }
 
@@ -67,6 +70,8 @@ class AgentOrchestrator(
         updateOverlay("Starting...", "🚀", 0xFF00BFFF.toInt())
 
         agentJob = scope.launch {
+            // Learn from the task prompt immediately
+            memoryManager.extractAndLearn(taskDescription)
             runAgentLoop(taskDescription)
         }
     }
@@ -184,13 +189,17 @@ class AgentOrchestrator(
                 isThinking = true
             ))
 
+            // Fetch memory context for the AI
+            val memoryContext = memoryManager.getMemoryContext()
+
             val result = aiClient.getNextAction(
                 screenshot = screenshot,
                 taskDescription = taskDescription,
                 previousActions = previousActions,
                 screenWidth = screenWidth,
                 screenHeight = screenHeight,
-                uiTree = uiTree
+                uiTree = uiTree,
+                memoryContext = memoryContext
             )
 
             screenshot.recycle()
@@ -203,6 +212,7 @@ class AgentOrchestrator(
                 ))
                 _state.value = _state.value.copy(isRunning = false, status = AgentStatus.FAILED)
                 updateOverlay("Error", "❌", 0xFFFF3366.toInt())
+                memoryManager.recordTask(taskDescription, success = false)
                 return
             }
 
@@ -230,6 +240,7 @@ class AgentOrchestrator(
                     ))
                     _state.value = _state.value.copy(isRunning = false, status = AgentStatus.FAILED)
                     updateOverlay("Loop Detected", "🔄", 0xFFFF3366.toInt())
+                    memoryManager.recordTask(taskDescription, success = false)
                     return
                 }
             } else {
@@ -244,6 +255,7 @@ class AgentOrchestrator(
                 ))
                 _state.value = _state.value.copy(isRunning = false, status = AgentStatus.COMPLETED)
                 updateOverlay("Done!", "✅", 0xFF00FF00.toInt())
+                memoryManager.recordTask(taskDescription, success = true)
                 return
             }
 
@@ -254,6 +266,7 @@ class AgentOrchestrator(
                 ))
                 _state.value = _state.value.copy(isRunning = false, status = AgentStatus.FAILED)
                 updateOverlay("Failed", "❌", 0xFFFF3366.toInt())
+                memoryManager.recordTask(taskDescription, success = false)
                 return
             }
 

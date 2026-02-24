@@ -98,7 +98,8 @@ JSON only: {"thinking":"...","action":{"type":"...","nodeId":5,"text":"...","scr
         previousActions: List<String> = emptyList(),
         screenWidth: Int,
         screenHeight: Int,
-        uiTree: String = ""
+        uiTree: String = "",
+        memoryContext: String = ""
     ): Result<AgentResponse> = withContext(Dispatchers.IO) {
         try {
             if (apiKey.isBlank()) {
@@ -113,12 +114,13 @@ JSON only: {"thinking":"...","action":{"type":"...","nodeId":5,"text":"...","scr
             } else ""
 
             val uiTreeSection = if (uiTree.isNotBlank()) "\n\nUI TREE (ID -> label -> bounds):\n$uiTree" else ""
+            val memorySection = if (memoryContext.isNotBlank()) "\n\nUSER MEMORY (context for this task):\n$memoryContext" else ""
 
-            val userPromptText = "Task: $taskDescription\nScreen: ${screenWidth}x${screenHeight}$historyContext$uiTreeSection\nRespond with JSON only."
+            val userPromptText = "Task: $taskDescription\nScreen: ${screenWidth}x${screenHeight}$historyContext$uiTreeSection$memorySection\nRespond with JSON only."
 
             val modelsToTry = when (provider) {
-                // Use explicit '-latest' aliases to prevent 404 not found errors on older base names
-                Provider.GEMINI -> listOf("gemini-2.0-flash", "gemini-1.5-pro-latest", "gemini-1.5-flash-latest")
+                // Prioritize models with active free quota (2.5 flash, 2.0 flash exp) because 2.0-flash free tier is 0 limit
+                Provider.GEMINI -> listOf("gemini-2.5-flash", "gemini-2.0-flash-exp", "gemini-1.5-pro-latest", "gemini-1.5-flash-latest")
                 Provider.OPENROUTER -> listOf("google/gemini-2.0-flash-001", "google/gemini-2.0-flash-lite-preview-02-05", "google/gemini-1.5-pro", "openai/gpt-4o-mini")
                 Provider.OPENAI -> listOf("gpt-4o-mini", "gpt-4o")
             }
