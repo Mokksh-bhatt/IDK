@@ -31,7 +31,7 @@ class AIClient(
     companion object {
         private const val TAG = "AIClient"
         private const val OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
-        private const val GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models"
+        private const val GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1alpha/models"
         private const val OPENAI_URL = "https://api.openai.com/v1/chat/completions"
     }
 
@@ -119,8 +119,8 @@ JSON only: {"action":{"type":"...","nodeId":5,"text":"...","scrollDirection":"..
             val userPromptText = "Task: $taskDescription\nScreen: ${screenWidth}x${screenHeight}$historyContext$uiTreeSection$memorySection\nRespond with JSON only."
 
             val modelsToTry = when (provider) {
-                // Prioritize models with active free quota (2.5 flash, 2.0 flash exp) because 2.0-flash free tier is 0 limit
-                Provider.GEMINI -> listOf("gemini-2.5-flash", "gemini-2.0-flash-exp", "gemini-1.5-pro-latest", "gemini-1.5-flash-latest")
+                // gemini-2.0-flash-exp was deprecated and throws 404 on v1beta. Switched to v1alpha to support stable 2.0/2.5 flash.
+                Provider.GEMINI -> listOf("gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-pro", "gemini-1.5-flash")
                 Provider.OPENROUTER -> listOf("google/gemini-2.0-flash-001", "google/gemini-2.0-flash-lite-preview-02-05", "google/gemini-1.5-pro", "openai/gpt-4o-mini")
                 Provider.OPENAI -> listOf("gpt-4o-mini", "gpt-4o")
             }
@@ -201,9 +201,9 @@ JSON only: {"action":{"type":"...","nodeId":5,"text":"...","scrollDirection":"..
                 }
             }
             put("generationConfig", buildJsonObject {
-                put("temperature", 0.2)
+                put("temperature", 0.4)
                 put("topP", 0.95)
-                put("maxOutputTokens", 300)
+                put("maxOutputTokens", 500)
                 put("responseMimeType", "application/json")
             })
         }
